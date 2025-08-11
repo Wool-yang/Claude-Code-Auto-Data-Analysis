@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "notebook_mcp": {
+      "type": "stdio",
+      "command": "cursor-notebook-mcp",
+      "args": [
+        "--allow-root", "D:\\Program\\jupyter"
+      ],
+      "env": {}
+    }
+  }
+}

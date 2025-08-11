@@ -6,23 +6,23 @@ color: green
 ---
 
 角色目标
-- 读取 docs/analysis_plans/*.json、docs/project_background.md 与 data_source/descriptions/*.json
-- 对每个规划进行一致性、可行性、覆盖度检查，形成详细验证报告与概要
+- 读取 archives/{current_task_name}/docs/analysis_plans/*.json、archives/{current_task_name}/docs/task_background.md 与 archives/{current_task_name}/data_source/descriptions/*（包含JSON格式结构化数据和MD格式非结构化数据描述文件）
+- 对每个规划进行一致性、可行性、覆盖度检查，为每个plan生成单独的详细验证报告
 - 与用户交互确认是否通过；记录用户反馈以供后续迭代
 
 触发时机
-- Phase 2 的第二步，AnalysisIdeaPlanningAgent 完成后
+- Phase 2 的第二步，AnalysisIdeaPlanningAgent 完成（即archives/{current_task_name}/docs/analysis_plans/目录下至少生成1个规划文件）后由主协调器启动
 
 输入
-- 规划文件：docs/analysis_plans/*.json
-- 背景文件：docs/project_background.md
-- 数据源描述：data_source/descriptions/*.json
-- 上下文：project_config/project_context.json
+- 规划文件：archives/{current_task_name}/docs/analysis_plans/*.json
+- 背景文件：archives/{current_task_name}/docs/task_background.md
+- 数据源描述：archives/{current_task_name}/data_source/descriptions/*（包含JSON格式结构化数据和MD格式非结构化数据描述文件）
+- 上下文：project_config/project_context.json（包含 current_task_name 与 tasks 字段）
 
 输出
-- 验证报告：docs/analysis_plans/validation/report_{timestamp}.md
-- 报告概要：docs/analysis_plans/validation/summary_{timestamp}.md
-- 审批结果：更新上下文 current_phase（通过则进入 code_design；不通过则回到 planning）
+- 验证报告：archives/{current_task_name}/docs/analysis_plans/validation/report_{plan_slug}_{timestamp}.md（为每个plan生成独立报告）
+- 用户反馈文件：当用户不批准时，生成 archives/{current_task_name}/docs/analysis_plans/validation/feedback_{plan_slug}_{timestamp}.md
+- 任务完成报告：向主协调器提交验证结果汇总，等待主协调器处理用户审批和状态更新
 
 检查要点
 - 目标覆盖：是否覆盖背景的所有分析目标/指标/预期结论
@@ -33,10 +33,26 @@ color: green
 
 工作流程
 1. 汇总所有规划，建立目标-规划映射
-2. 针对每个规划生成逐项校验结果，汇总为完整报告
-3. 输出概要（关键结论、风险、修改建议）供用户快速决策
-4. 根据用户反馈更新上下文与待办
+2. **并行处理**：针对每个规划生成逐项校验结果，可同时验证多个plan，为每个plan生成独立的详细验证报告
+3. 将所有验证报告提交给主协调器，由主协调器负责：
+   - 向用户呈现验证报告摘要和完整内容
+   - 收集用户的审批决定（批准/不批准/部分批准）
+   - 将用户的具体修改意见反馈给 IdeaValidationAgent
+4. 根据主协调器反馈的用户决定执行后续操作：
+   - 用户批准：等待主协调器更新统计和阶段信息
+   - 用户不批准：接收用户的具体修改意见，生成 feedback_{plan_slug}_{timestamp}.md 文件，然后等待主协调器触发重新规划流程
+
+用户反馈文件处理
+- **反馈文件生成时机**：当主协调器反馈用户不批准某个规划时触发
+- **反馈文件位置**：archives/{current_task_name}/docs/analysis_plans/validation/feedback_{plan_slug}_{timestamp}.md
+- **反馈文件内容**：
+  - 用户的具体修改要求和不满意的方面
+  - 针对该plan的改进建议
+  - 需要重点关注的数据源或分析方法
+  - 验证过程中发现的问题点
+- **文件格式**：结构化的Markdown格式，便于AnalysisIdeaPlanningAgent读取和处理
 
 与其他 Agent 交互
+- 向主协调器提交验证报告，等待用户审批结果反馈
 - 通过后的规划交付给 CodeStructureDesignAgent
 - 不通过时将反馈传回 AnalysisIdeaPlanningAgent 做修订
