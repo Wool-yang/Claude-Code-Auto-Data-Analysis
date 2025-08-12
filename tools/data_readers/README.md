@@ -1,18 +1,63 @@
 # 数据读取工具说明文档
 
-## 概述
+## DataSourceFileAnalysisAgent 处理流程
 
-本目录包含三个核心脚本，用于支持 `DataSourceFileAnalysisAgent` 进行数据源分析：
+DataSourceFileAnalysisAgent 通过 Bash 工具调用脚本，处理流程如下：
+
+### 1. 文件分类
+```bash
+python tools/data_readers/file_classifier.py archives/{current_task_name}/data_source/raw/data.xlsx
+# 输出 JSON 到 stdout，Agent 解析结果判断文件类型
+```
+
+### 2. 结构化数据处理
+```bash
+# 生成中间产物分析文件
+python tools/data_readers/read_structured_data.py \
+  --files archives/{current_task_name}/data_source/raw/data.csv \
+  --intermediate \
+  --sample_rows 20
+# 输出 JSON 到 stdout，同时生成 intermediate_artifacts/{filename}_intermediate.json
+```
+
+### 3. 非结构化数据处理
+```bash
+# 步骤1：生成中间产物
+python tools/data_readers/document_parser.py \
+  archives/{current_task_name}/data_source/raw/document.docx
+# 生成 intermediate_artifacts/{filename}_intermediate.md 和图片目录
+
+# 步骤2：检查文件大小，如需要则分割
+# Agent 使用 ls -lh 或 dir 命令检查文件大小
+# 如果 > 20KB，调用分割工具：
+python tools/data_readers/file_splitter.py \
+  archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/document_intermediate.md \
+  -o archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/ \
+  -s 20 --delete-original
+
+# 步骤3：添加完整的 frontmatter
+python tools/data_readers/frontmatter_tool.py single \
+  archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/document_intermediate.md \
+  --frontmatter '{"source_id": "1", "file_name": "document.docx", ...}' \
+  -o archives/{current_task_name}/data_source/descriptions/document.md \
+  --merge update
+```
+
+### 4. Agent 处理逻辑
+- Agent 使用 Bash 工具调用上述脚本
+- 解析脚本的 stdout 输出（JSON 格式）
+- 根据输出决定下一步操作
+- 最终生成符合 CLAUDE.md schema 的描述文件
+
+## 工具概述
+
+本目录包含五个核心脚本：
 
 1. **file_classifier.py** - 文件类型分类器
 2. **read_structured_data.py** - 结构化数据处理脚本  
 3. **document_parser.py** - 非结构化数据处理脚本
-
-## 工作流程
-
-```
-原始文件 → file_classifier.py → 判定文件类型 → 选择对应脚本处理 → DataSourceFileAnalysisAgent 融合结果
-```
+4. **file_splitter.py** - 文件分割工具
+5. **frontmatter_tool.py** - Frontmatter处理工具
 
 ---
 
@@ -270,46 +315,170 @@ Total images extracted: 13
 
 ---
 
-## DataSourceFileAnalysisAgent 集成
+## 4. file_splitter.py
 
-### 处理流程
+### 功能
+将大型Markdown文件（>20KB）分割成多个较小的文件，确保每个分片不超过指定大小，同时保持文档结构的完整性。
 
-1. **文件分类**：
-   ```python
-   result = subprocess.run(['python', 'file_classifier.py', file_path], 
-                          capture_output=True, text=True)
-   classification = json.loads(result.stdout)
-   ```
+### 核心特性
 
-2. **结构化数据处理**：
-   ```python
-   if classification['classification'] == 'structured':
-       result = subprocess.run(['python', 'read_structured_data.py', 
-                              '--files', file_path, '--intermediate'], 
-                              capture_output=True, text=True)
-       analysis_data = json.loads(result.stdout)
-   ```
+#### 智能分割策略
+- **结构保护**：保护代码块、表格等完整结构不被分割
+- **标题优先**：优先在标题处进行分割
+- **段落完整**：尽量保持段落的完整性
+- **大小控制**：确保每个分片不超过指定大小（默认20KB）
 
-3. **非结构化数据处理**：
-   ```python
-   elif classification['classification'] == 'unstructured':
-       subprocess.run(['python', 'document_parser.py', file_path])
-       # 读取生成的中间产物markdown文件
-   ```
+#### frontmatter维护
+- **完整保留**：每个分片都保留原始文件的所有frontmatter字段
+- **分片标记**：添加分片特有字段（is_split、part_number、total_parts、parent_file）
+- **一致性**：确保所有分片的元数据一致
 
-4. **结果融合**：
-   - 结合脚本输出结果
-   - 读取 task_background.md 生成 description 和 tags
-   - 分配 source_id
-   - 格式化为 CLAUDE.md 标准 schema
+### 使用方法
 
-### 错误处理
+#### 基本使用
+```bash
+# 分割大文件（保留原文件）
+python file_splitter.py large_document.md
+
+# 指定输出目录和分片大小
+python file_splitter.py large_document.md -o ./output -s 15
+
+# 分割后删除原文件
+python file_splitter.py large_document.md --delete-original
+```
+
+#### 在DataSourceFileAnalysisAgent中的集成
+```python
+# 检查文件大小并分割
+file_size_kb = os.path.getsize(intermediate_file) / 1024
+if file_size_kb > 20:
+    result = subprocess.run([
+        'python', 'tools/data_readers/file_splitter.py', 
+        intermediate_file, '-s', '20', '--delete-original'
+    ], capture_output=True, text=True)
+    
+    # 处理生成的分片文件
+    split_files = get_split_files(intermediate_file)
+```
+
+### 输出格式
+
+#### 文件命名
+- 原文件：`document.md`
+- 分片文件：`document_1.md`, `document_2.md`, `document_3.md`...
+
+#### frontmatter示例
+```yaml
+---
+source_id: "2"
+file_name: "project_background.docx"
+file_type: "docx"
+is_structured: false
+size: 45231
+description: "项目背景文档，包含需求分析和业务流程描述"
+# ... 其他原始字段 ...
+is_split: true
+part_number: 1
+total_parts: 3
+parent_file: "project_background.md"
+---
+```
+
+### 参数说明
+- `input_file`: 必需，输入的Markdown文件路径
+- `-o, --output-dir`: 可选，输出目录（默认为输入文件所在目录）
+- `-s, --max-size`: 可选，每个分片的最大大小，单位KB（默认20）
+- `--delete-original`: 可选，分割后删除原文件
+
+### 依赖项
+- Python 3.6+
+- PyYAML（用于处理YAML frontmatter）
+
+---
+
+## 5. frontmatter_tool.py
+
+### 功能
+智能处理 Markdown 文件的 YAML frontmatter，支持添加、更新和合并，特别适合处理大型文件而不占用过多内存。
+
+### 核心特性
+
+#### 智能 frontmatter 处理
+- **自动检测**：智能检测文件是否已有 frontmatter
+- **流式处理**：不会一次性读取整个文件到内存
+- **编码兼容**：完全支持 UTF-8 编码的中文内容
+
+#### 三种合并策略
+- **update**（默认）：更新已存在的字段，保留其他字段
+- **replace**：完全替换现有 frontmatter
+- **merge_deep**：深度合并嵌套字典结构
+
+### 使用方法
+
+#### 检查文件 frontmatter
+```bash
+python frontmatter_tool.py check document.md
+```
+
+#### 单文件处理
+```bash
+# 添加新的 frontmatter
+python frontmatter_tool.py single document.md \
+  --frontmatter '{"source_id": "1", "description": "测试文档"}' \
+  --merge update
+
+# 输出到新文件
+python frontmatter_tool.py single document.md \
+  -o output.md \
+  --frontmatter '{"source_id": "1"}' \
+  --merge replace
+```
+```
+
+### 输出格式
+
+#### 成功处理的文件
+```yaml
+---
+source_id: "1"
+file_name: "document.docx"
+file_type: "docx"
+is_structured: false
+size: 45231
+description: "项目文档"
+structure:
+  row_count: 0
+  column_count: 0
+  columns: []
+metadata:
+  encoding: "utf-8"
+  delimiter: null
+  has_header: false
+intermediate_artifacts:
+  has_intermediate_file: true
+  intermediate_file_path: "intermediate_artifacts/doc_intermediate.md"
+tags: ["文档", "项目"]
+# 分片文件额外字段（如适用）
+is_split: true
+part_number: 1
+total_parts: 3
+parent_file: "document.md"
+---
+
+# 原始文档内容
+...
+```
+
+
+---
+
+## 错误处理
 
 - **分类失败**：默认使用 document_parser.py
 - **脚本执行失败**：记录错误，跳过该文件
 - **编码问题**：使用UTF-8输出，错误时使用replace模式
 
-### 性能优化
+## 性能优化
 
 - **并发处理**：可并行处理多个文件
 - **内存控制**：限制采样行数和文件大小

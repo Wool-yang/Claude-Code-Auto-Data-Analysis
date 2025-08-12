@@ -123,13 +123,7 @@ def classify_file(file_path):
     return result
 
 def main():
-    parser = argparse.ArgumentParser(description="文件类型分类器")
-    parser.add_argument('file_path', help='要分类的文件路径')
-    parser.add_argument('--output', help='输出JSON文件路径（可选）')
-    
-    args = parser.parse_args()
-    
-    # 设置输出编码，参照read_structured_data.py的方式
+    # 设置输出编码，参照read_structured_data.py的方式，在ArgumentParser之前设置
     import sys
     import io
     try:
@@ -141,6 +135,12 @@ def main():
             sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
         except Exception:
             pass
+    
+    parser = argparse.ArgumentParser(description="文件类型分类器")
+    parser.add_argument('file_path', help='要分类的文件路径')
+    parser.add_argument('--output', help='输出JSON文件路径（可选）')
+    
+    args = parser.parse_args()
     
     if not os.path.exists(args.file_path):
         error_result = {

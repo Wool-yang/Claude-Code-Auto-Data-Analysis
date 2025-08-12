@@ -279,16 +279,6 @@ def gather_hard_info(file_path, read_result, sample_n, uniform_sampling=True):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--files', nargs='+', required=True)
-    parser.add_argument('--sample_rows', type=int, default=10)
-    parser.add_argument('--head_rows', type=int, default=None)
-    parser.add_argument('--head_sampling', action='store_true', help='使用头部抽样而不是均匀抽样（默认为均匀抽样）')
-    parser.add_argument('--emit_schema', action='store_true', help='输出CLAUDE.md标准schema格式（向后兼容）')
-    parser.add_argument('--intermediate', action='store_true', help='输出中间分析结果供DataSourceFileAnalysisAgent使用')
-    parser.add_argument('--temp_output', type=str, default=None)
-    args = parser.parse_args()
-
     import sys, os, io
     try:
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
@@ -299,6 +289,16 @@ def main():
             sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
         except Exception:
             pass
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--files', nargs='+', required=True)
+    parser.add_argument('--sample_rows', type=int, default=10)
+    parser.add_argument('--head_rows', type=int, default=None)
+    parser.add_argument('--head_sampling', action='store_true', help='使用头部抽样而不是均匀抽样（默认为均匀抽样）')
+    parser.add_argument('--emit_schema', action='store_true', help='输出CLAUDE.md标准schema格式（向后兼容）')
+    parser.add_argument('--intermediate', action='store_true', help='输出中间分析结果供DataSourceFileAnalysisAgent使用')
+    parser.add_argument('--temp_output', type=str, default=None)
+    args = parser.parse_args()
 
     for f in args.files:
         try:

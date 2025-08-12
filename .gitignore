@@ -135,8 +135,23 @@ node_modules/
 # Project specific - ignore contents but not directory structure
 logs/*
 !logs/.gitkeep
+project_config/*
+!project_config/.gitkeep
 data_source/raw/*
 !data_source/raw/.gitkeep
+
+# Archives directory - contains task-specific data and results
+# Ignore everything in archives except .gitkeep files and example structure
+archives/*
+!archives/.example_task/
+archives/.example_task/**
+!archives/.example_task/**/.gitkeep
+# Null files
+nul
+# Tracking files
+tracked_files.txt
+# Local settings with potential sensitive configs
+.claude/settings.local.json
 
 # OS generated files
 Thumbs.db

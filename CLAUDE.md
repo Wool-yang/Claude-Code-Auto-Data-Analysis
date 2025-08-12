@@ -48,7 +48,9 @@
 
 1. Phase 1 — 启动与数据分析
 * Input：archives/{current_task_name}/data_source/raw/（主协调器应准备并放置本次运行原始数据）
-* Output：生成 archives/{current_task_name}/data_source/descriptions/*.json（每个 task 的原始数据位于 archives/{current_task_name}/data_source/raw/）。
+* Output：生成 archives/{current_task_name}/data_source/descriptions/目录下的描述文件：
+  - 结构化数据：*.json 格式描述文件
+  - 非结构化数据：*.md 格式增强版Markdown描述文件
 * Context update：current_phase=data_analysis，更新 data_sources 计数
 
 2. Phase 2 — 规划与验证
@@ -57,9 +59,8 @@
 * Output：生成 archives/{current_task_name}/docs/analysis_plans/*.json
 * 随后启动 IdeaValidationAgent 验证并产出验证报告；用户批准则进入下一阶段，否则记录反馈并迭代
 
-3. Phase 3 — 代码设计与执行
-* Action：启动 CodeStructureDesignAgent 生成 archives/{current_task_name}/docs/code_designs/*.md
-* Action：在所有设计完成后启动 AnalysisExecutionAgent，在 D:\\Program\\jupyter\\{project_name}\\{current_task_name} 中逐步生成并执行 Notebook（主协调器须设置 project_context.current_task_name），所有 Notebook 与执行日志按 task 隔离存放。
+3. Phase 3 — 分析执行
+* Action：启动 AnalysisExecutionAgent，直接基于规划文件在 D:\\Program\\jupyter\\{project_name}\\{current_task_name} 中逐步生成并执行 Notebook（主协调器须设置 project_context.current_task_name），所有 Notebook 与执行日志按 task 隔离存放。
 
 4. Phase 4 — 结果验证
 * Action：启动 ResultValidationAgent，对已完成的 Notebook 进行验证并生成报告
@@ -74,19 +75,21 @@
 ##### 状态机与流转
 **Phase 1 (data_analysis)**：
 - 进入前：设置 status=running, current_phase=data_analysis
-- 完成条件：archives/{current_task_name}/data_source/descriptions/ 目录下成功生成所有 raw 文件对应的 .json 描述文件
+- 完成条件：archives/{current_task_name}/data_source/descriptions/ 目录下成功生成所有 raw 文件对应的描述文件：
+  - 结构化数据文件 → .json 格式描述文件
+  - 非结构化数据文件 → .md 格式增强版Markdown描述文件
 - 完成后：保持 status=running, current_phase=planning
 - 失败处理：单个文件失败重试至多2次；超过50%文件失败则 status=failed 并停止
 
 **Phase 2 (planning→validation)**：
 - 规划阶段：current_phase=planning，完成条件为生成至少1个规划文件
 - 验证阶段：current_phase=validation，为每个规划生成验证报告后等待用户审批
-- 用户批准：更新 analysis_plans.completed 计数，设置 current_phase=code_design
+- 用户批准：更新 analysis_plans.completed 计数，设置 current_phase=execution
 - 用户不批准：记录反馈到 feedback_{plan_slug}_{timestamp}.md，回到 planning 阶段
 
-**Phase 3 (code_design→execution)**：
-- 设计阶段：current_phase=code_design，为所有通过验证的规划生成设计文件
-- 执行阶段：current_phase=execution，所有设计文件完成后开始生成并执行 Notebook
+**Phase 3 (execution)**：
+- 进入条件：current_phase=execution，用户批准通过验证的规划（analysis_plans.completed > 0）
+- 执行阶段：AnalysisExecutionAgent 直接基于规划文件生成并执行 Notebook
 - 完成条件：所有 Notebook 成功执行，无严重错误
 
 **Phase 4 (result_validation)**：
@@ -133,7 +136,7 @@
 - 历史追溯：重新规划时必须参考所有历史反馈，避免重复错误
 
 **状态更新**：
-- 批准后：更新 analysis_plans.completed 计数，设置 current_phase=code_design
+- 批准后：更新 analysis_plans.completed 计数，设置 current_phase=execution
 - 不批准：保持 current_phase=validation，触发 AnalysisIdeaPlanningAgent 重新规划
 
 ##### 运行与安全保障
@@ -144,13 +147,16 @@
 - Windows 兼容：统一使用双反斜杠或转义路径，避免编码问题
 
 ##### 项目初始化细化
-- 从 archives/{current_task_name}/docs/task_background.md 读取 project_name；若 project_id 为空则生成 UUID
-- 初始化/更新 project_context.json 字段并写入 last_updated；确保 notebook_dir 就绪
+- 从 archives/{current_task_name}/docs/task_background.md 读取 project_name
+- 若 project_context.json 不存在或 project_id 为空，则生成新的 UUID 作为 project_id
+- 初始化/更新 project_context.json 字段并写入 last_updated
+- 确保 notebook_dir = "D:\\Program\\jupyter\\{project_name}" 目录存在，不存在则创建
+- 在 notebook_dir 下创建 {current_task_name} 子目录用于存放本次任务的 Notebook
 
 ##### 任务存档与每任务数据源
 - 每次运行必须提供 current_task_name，所有 Agent 生成的产物写入 archives/{current_task_name}/ 下的对应子目录（见下文路径约定）。
 - 每个 task 必须有独立的原始数据目录：archives/{current_task_name}/data_source/raw/，主协调器或运行入口应负责在任务开始前准备该目录并放置本次运行所需的原始数据文件。
-- 路径示例：archives/{current_task_name}/data_source/descriptions/，archives/{current_task_name}/docs/analysis_plans/，archives/{current_task_name}/docs/code_designs/，archives/{current_task_name}/logs/{phase}/。
+- 路径示例：archives/{current_task_name}/data_source/descriptions/，archives/{current_task_name}/docs/analysis_plans/，archives/{current_task_name}/logs/{phase}/。
 - Notebook 存放路径示例：D:\\Program\\jupyter\\{project_name}\\{current_task_name}\\*.ipynb。
 - 读取规则：所有 Agent 首选当前 task 的 archives/{current_task_name} 下相应目录；若 task 目录缺失明确提示并退出（避免混用不同任务的数据）。
 - 任务复制：用户可复制 archives/{old_task} 为 archives/{new_task} 作为基线后再运行；系统写入仅限新 task 目录，旧任务数据保持不变。
@@ -185,10 +191,6 @@
 -   **若你批准**：流程将进入下一阶段。
 -   **若你不批准**：我会向你征求具体的修改意见，然后将这些意见传递给 `AnalysisIdeaPlanningAgent`，由其对规划进行修改，并重新开始此验证流程，直到规划获得你的批准。
 
-#### CodeStructureDesignAgent（代码结构设计Agent）
-根据AnalysisIdeaPlanningAgent生成的若干分析规划文件，来生成代码设计文件
-- 代码设计文件为更贴近于 ipynb 中 python 数据分析代码的文件，进一步阐述分析规划文件中的分析思路转化到对应的一系列分析代码的构建思路
-- 此处仍然不需要构建出完整的代码，是简单的代码步骤对应伪代码、文字信息皆可，目标是描述清晰之后AnalysisExecutionAgent的任务步骤
 
 #### AnalysisExecutionAgent（分析执行Agent）
 基于所有代码设计文件，开始进行 ipynb 文件的编写
@@ -216,7 +218,9 @@
 
 **Python 依赖**:
 - **配置文件**: `requirements.txt`
-- **当前依赖**: playwright==1.54.0（用于 Web 自动化和文档处理）
+- **当前依赖**: 
+  - playwright==1.54.0（用于 Web 自动化和文档处理）
+  - pyyaml>=6.0（用于 YAML frontmatter 处理）
 - **安装方式**: `pip install -r requirements.txt`
 
 **Node.js 依赖**:
@@ -247,7 +251,6 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
 │   ├── agents/                                     # Agent实现文件
 │   │   ├── AnalysisExecutionAgent.md               # 分析执行Agent
 │   │   ├── AnalysisIdeaPlanningAgent.md            # 分析思路规划Agent
-│   │   ├── CodeStructureDesignAgent.md             # 代码结构设计Agent
 │   │   ├── DataSourceFileAnalysisAgent.md          # 数据源文件分析Agent
 │   │   ├── IdeaValidationAgent.md                  # 思路验证Agent
 │   │   └── ResultValidationAgent.md                # 结果验证Agent
@@ -273,14 +276,17 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
 │       │   │       ├── report_{plan_slug}_{timestamp}.md       # IdeaValidationAgent按plan隔离的验证报告
 │       │   │       ├── result_report_{plan_slug}_{timestamp}.md # ResultValidationAgent按plan隔离的结果验证报告
 │       │   │       └── feedback_{plan_slug}_{timestamp}.md     # 用户反馈文件
-│       │   └── code_designs/                       # CodeStructureDesignAgent 输出（按 task 隔离）
 │       └── logs/                                   # 任务级日志，按 phase 子目录存放
 ├── tools/                                          # 工具脚本目录
 │   ├── data_readers/                               # 数据读取工具
 │   │   ├── README.md                               # 数据读取工具说明
 │   │   ├── file_classifier.py                     # 文件分类脚本
 │   │   ├── read_structured_data.py               # 结构化数据读取脚本
-│   │   └── document_parser.py                      # 文档解析脚本
+│   │   ├── document_parser.py                      # 文档解析脚本
+│   │   ├── file_splitter.py                       # 文件分割工具
+│   │   ├── README_file_splitter.md                # 文件分割工具说明
+│   │   ├── frontmatter_tool.py                    # Frontmatter处理工具
+│   │   └── README_frontmatter_tool.md             # Frontmatter工具说明
 │   ├── notebook_runners/                           # Notebook运行器相关工具
 │   │   ├── nb_runner.py                            # Notebook运行器脚本
 │   │   └── README_nb_runner.md                     # 运行器使用说明
@@ -299,6 +305,30 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
    - 示例用法
 3. **文档维护**：当工具脚本更新时，相应的说明文档也应及时更新。
 
+### Agent 工具使用强制要求
+
+**重要：所有 Agent 必须严格使用项目提供的工具脚本，禁止手动实现相同功能！**
+
+#### DataSourceFileAnalysisAgent 必须使用的工具
+- `tools/data_readers/file_classifier.py` - 文件类型分类
+- `tools/data_readers/read_structured_data.py` - 结构化数据处理  
+- `tools/data_readers/document_parser.py` - 非结构化数据处理
+- `tools/data_readers/file_splitter.py` - 大文件分割
+- `tools/data_readers/frontmatter_tool.py` - Frontmatter处理
+
+#### AnalysisExecutionAgent 必须使用的工具
+- `tools/notebook_runners/nb_runner.py` - Notebook执行和验证
+
+#### 禁止的手动实现行为
+- ❌ 通过文件扩展名手动判断文件类型
+- ❌ 使用 pandas.read_csv() 等直接读取而不调用 read_structured_data.py
+- ❌ 手动解析 Word/Excel 文档而不使用 document_parser.py
+- ❌ 手动分割大文件或处理 frontmatter
+- ❌ 使用 nbconvert 等工具执行 Notebook 而不使用 nb_runner.py
+
+#### 标准调用格式
+详细的调用方法和参数请参考 `tools/README.md` 和各子目录的说明文档。
+
 ## Agent间通信Schema设计
 
 为了确保Agent之间的顺畅协作，定义一套柔性的通信Schema。
@@ -313,14 +343,13 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
   "project_name": "string",
   "notebook_dir": "string",
   "status": "enum[pending, running, completed, failed]",
-  "current_phase": "enum[data_analysis, planning, validation, code_design, execution, result_validation]",
+  "current_phase": "enum[data_analysis, planning, validation, execution, result_validation]",
   "current_task_name": "string|null",
   "tasks": {
     "{current_task_name}": {
       "notebook_dir": "string",
       "data_sources": {"count": "integer", "processed": "integer"},
       "analysis_plans": {"count": "integer", "completed": "integer"},
-      "code_designs": {"count": "integer", "completed": "integer"},
       "execution": {"notebook_count": "integer", "completed_count": "integer", "failures": "integer"},
       "result_validation": {
         "validation_reports_count": "integer",
@@ -346,7 +375,6 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
   - `notebook_dir`: Notebook 存放目录。
   - `data_sources`: {`count`, `processed`}。
   - `analysis_plans`: {`count`, `completed`}。
-  - `code_designs`: {`count`, `completed`}。
   - `execution`: {`notebook_count`, `completed_count`, `failures`}。
   - `result_validation`: 结果验证统计信息。
     - `validation_reports_count`: 生成的验证报告数量。
@@ -360,7 +388,7 @@ Agent 读写约定：
 
 - **上下文文件读取**：Agent 只能**读取** `project_config/project_context.json` 获取 `current_task_name`、项目状态等信息；若缺失或对应的 `archives/{current_task_name}` 目录不存在，应报错并退出以避免混用数据。
 
-- **产物读写**：Agent 在 `archives/{current_task_name}/` 下读写产物（data_source 描述、analysis_plans、code_designs、logs 等）。
+- **产物读写**：Agent 在 `archives/{current_task_name}/` 下读写产物（data_source 描述、analysis_plans、logs 等）。
 
 - **统计信息报告**：Agent 完成任务后，应向主协调器**报告统计信息**（如处理文件数量、生成文件数量、错误计数等），由主协调器负责更新 `project_context.json`。
 
@@ -387,100 +415,142 @@ Agent 读写约定：
   "plan_slug": "string",
   "title": "string",
   "description": "string",
-  "related_objectives": ["string"],
-  "related_key_indicators": ["string"],
-  "expected_conclusions": ["string"],
-  "data_sources_used": ["source_id"],
-  "methodology": "string",
-  "analysis_approach": "string",
-  "steps": [
+  
+  "execution_steps": [
     {
       "step_id": "integer",
-      "description": "string",
+      "name": "string",
+      "operations": [
+        {
+          "action": "string",
+          "sources": ["string"],
+          "fields": ["string"],
+          "field_usage": "string",
+          "output": "string"
+        }
+      ],
       "expected_output": "string"
     }
   ],
+  
+  "targets": {
+    "objectives": ["string"],
+    "kpis": ["string"],
+    "outcomes": ["string"]
+  },
+  
+  "data_sources": {
+    "source_id": {
+      "file": "string",
+      "type": "enum[structured, unstructured]",
+      "purpose": "string",
+      "fields": {
+        "core": ["string"],
+        "support": ["string"]
+      },
+      "content_areas": ["string"]
+    }
+  },
+  
+  "field_stats": {
+    "total_fields": "integer",
+    "used_fields": "integer",
+    "utilization_rate": "string"
+  },
+  
+  "methodology": "string",
+  
   "deliverables": {
-    "notebook_file": "string",
-    "expected_outputs": ["string"]
+    "notebook": "string",
+    "outputs": ["string"]
+  },
+  
+  "field_details": {
+    "field_name": {
+      "role": "string",
+      "category": "enum[dimension, measure, identifier, metadata]",
+      "derivation": ["string"]
+    }
   }
 }
 ```
 
 **字段说明**:
-- `plan_id`: 分析规划的唯一标识符（UUID）。
-- `plan_slug`: 规划的短标识符，用于文件命名和Agent间通信，基于title生成。
-- `title`: 分析任务的标题。
-- `description`: 对此分析任务的简要描述。
-- `related_objectives`: 关联的项目背景中的分析目标。
-- `related_key_indicators`: 关联的项目背景中的关键指标。
-- `expected_conclusions`: 预期得出的结论。
-- `data_sources_used`: 本次分析需要用到的数据源ID列表。
-- `methodology`: 本次分析所采用的核心方法论或模型概述。
-- `analysis_approach`: 分析思路和方法，描述如何通过数据分析得出预期结论。
-- `steps`: 具体的分析步骤。
-  - `step_id`: 步骤编号。
-  - `description`: 该步骤的详细描述。
-  - `expected_output`: 该步骤预期产生的输出或结论。
-- `deliverables`: 交付物信息。
-  - `notebook_file`: 对应的Jupyter Notebook文件名。
-  - `expected_outputs`: 预期的分析输出结果（图表、数据表等）。
+
+**核心执行信息**：
+- `plan_id`: 分析规划的唯一标识符（UUID）
+- `plan_slug`: 规划的短标识符，用于文件命名和Agent间通信，基于title生成
+- `title`: 分析任务的标题
+- `description`: 对此分析任务的简要描述
+- `execution_steps`: **执行步骤**：
+  - `step_id`: 步骤编号
+  - `name`: 步骤名称
+  - `operations`: **操作序列**：
+    - `action`: 操作描述（如"合并渠道数据"、"品线聚合分析"）
+    - `sources`: 涉及的数据源ID列表
+    - `fields`: 操作涉及的字段列表
+    - `field_usage`: 字段利用方式（如"以品线为主键分组，计算花费总和、转化数总和"）
+    - `output`: 输出结果名称
+  - `expected_output`: 该步骤预期产生的输出
+
+**目标追踪**：
+- `targets`: **目标追踪**：
+  - `objectives`: 分析目标列表
+  - `kpis`: 关键指标列表
+  - `outcomes`: 预期成果列表
+
+**数据映射**：
+- `data_sources`: **数据源映射**：
+  - `source_id`: 数据源ID作为键
+    - `file`: 文件名
+    - `type`: 数据源类型（structured 或 unstructured）
+    - `purpose`: 用途描述
+    - `fields`: **字段分组（仅结构化数据）**：
+      - `core`: 核心字段列表
+      - `support`: 支撑字段列表
+    - `content_areas`: **内容区域（仅非结构化数据）** - 文档涵盖的主要内容区域列表，如["背景介绍", "数据分析", "结论建议"]
+    - `extracted_info`: **提取的关键信息（仅非结构化数据）** - 字典格式，包含从摘要文件提取的核心信息，如{"核心指标": [...], "关键发现": [...], "重要数据": [...]}
+
+**统计信息**：
+- `field_stats`: **字段利用统计**：
+  - `total_fields`: 总字段数
+  - `used_fields`: 使用字段数
+  - `utilization_rate`: 利用率百分比
+
+**分析方法**：
+- `methodology`: 核心方法论描述
+
+**交付物**：
+- `deliverables`: **交付物信息**：
+  - `notebook`: Notebook文件名
+  - `outputs`: 预期输出列表
+
+**扩展信息（可选）**：
+- `field_details`: **字段详细信息（按需展开）**：
+  - `field_name`: 字段名作为键
+    - `type`: 数据类型（如categorical、numeric、datetime、text等）
+    - `role`: 分析角色描述
+    - `category`: 角色类别（dimension/measure/identifier/metadata）
+    - `derivation`: 派生计算列表
 
 #### Agent间通信传递规范
 
 **plan_slug传递机制**:
 1. `AnalysisIdeaPlanningAgent` 生成规划时创建 `plan_slug` 并写入JSON文件
 2. `IdeaValidationAgent` 读取规划文件获取 `plan_slug`，生成验证报告时使用 `report_{plan_slug}_{timestamp}.md`
-3. `CodeStructureDesignAgent` 从规划文件读取 `plan_slug`，生成代码设计文件 `{plan_slug}.md`
-4. `AnalysisExecutionAgent` 从代码设计文件名推导 `plan_slug`，生成对应的Notebook
+3. `AnalysisExecutionAgent` 从规划文件中直接读取 `plan_slug`，生成对应的Notebook
 5. `ResultValidationAgent` 通过Notebook文件名或设计文件关联 `plan_slug`，生成结果验证报告 `result_report_{plan_slug}_{timestamp}.md`
 
 **数据流向图**:
 ```
 规划JSON({plan_slug}.json) → 验证报告(report_{plan_slug}_{timestamp}.md)
                           ↓
-代码设计({plan_slug}.md) → Notebook({notebook_file}) → 结果报告(result_report_{plan_slug}_{timestamp}.md)
+Notebook({plan_slug}.ipynb) → 结果报告(result_report_{plan_slug}_{timestamp}.md)
                           ↓
 用户反馈(feedback_{plan_slug}_{timestamp}.md)
 ```
 
 
-### 3. 代码设计文件 (`archives/{current_task_name}/docs/code_designs/*.md`)
-
-由`CodeStructureDesignAgent`生成，将分析规划中的思路转化为更贴近代码实现的伪代码或文字描述，指导`AnalysisExecutionAgent`的工作。
-
-#### 文件命名规范
-- **文件名格式**: `{plan_slug}.md`（与对应的分析规划文件的plan_slug保持一致）
-- **示例**: 规划文件`销售_趋势_分析.json` → 代码设计文件`销售_趋势_分析.md`
-
-````markdown
-# Code Design for: {plan_title}
-
-## Cell 1: 导入库和环境设置
-- **描述**: 导入所有需要的Python库，例如pandas, matplotlib等。
-- **伪代码**:
-  - `import pandas as pd`
-  - `import matplotlib.pyplot as plt`
-
-## Cell 2: 加载数据
-- **描述**: 根据分析规划中指定的`data_sources_used`，从`{data_source_path}`加载数据。
-- **伪代码**:
-  - `sales_df = pd.read_excel('path/to/sales_data.xlsx')`
-  - `customer_df = pd.read_csv('path/to/customer_data.csv')`
-
-## Cell 3: 数据预处理
-- **描述**: 对加载的数据进行清洗，如处理缺失值、转换数据类型等。
-- **伪代码**:
-  - `sales_df.dropna(inplace=True)`
-  - `sales_df['OrderDate'] = pd.to_datetime(sales_df['OrderDate'])`
-
-## Cell 4: 分析步骤 - {step_1_description}
-- **描述**: {step_1_description}
-- **实现思路**:
-  - 1. 按月分组销售数据。
-  - 2. 计算每月的总销售额。
-  - 3. 绘制月度销售趋势图。
-````
 
 ## Agent执行流程和并发设计
 
@@ -494,25 +564,25 @@ Agent的执行顺序遵循严格的阶段性依赖，前一阶段的输出是后
 ```
 主协调器 → DataSourceFileAnalysisAgent → AnalysisIdeaPlanningAgent → IdeaValidationAgent
                                                                             ↓
-ResultValidationAgent ← AnalysisExecutionAgent ← CodeStructureDesignAgent ←
+ResultValidationAgent ← AnalysisExecutionAgent ←
 ```
 
 **触发条件详述**：
 
 1.  **启动与数据分析**: 主协调器 → `DataSourceFileAnalysisAgent`
     - 触发条件：archives/{current_task_name}/data_source/raw/目录下存在至少1个数据文件
-    - 完成标准：archives/{current_task_name}/data_source/descriptions/目录下成功生成所有raw文件对应的.json描述文件
+    - 完成标准：archives/{current_task_name}/data_source/descriptions/目录下成功生成所有raw文件对应的描述文件（结构化数据为.json，非结构化数据为.md）
     - 状态更新：data_sources.processed 计数更新，current_phase=planning
 
 2.  **规划与验证**: `AnalysisIdeaPlanningAgent` → `IdeaValidationAgent` → 用户审批
     - 触发条件：DataSourceFileAnalysisAgent完成 + task_background.md存在
     - 完成标准：至少生成1个规划文件，所有规划通过用户验证
-    - 状态更新：analysis_plans.completed计数更新，current_phase=code_design
+    - 状态更新：analysis_plans.completed计数更新，current_phase=execution
 
-3.  **设计与执行**: `CodeStructureDesignAgent` → `AnalysisExecutionAgent`
+3.  **分析执行**: 直接启动 `AnalysisExecutionAgent`
     - 触发条件：analysis_plans.completed > 0（至少有通过验证的规划）
-    - 完成标准：为所有通过验证的plan生成设计文件，随后成功生成并执行对应的Notebook
-    - 状态更新：code_designs.completed计数，execution.completed_count更新，current_phase=result_validation
+    - 完成标准：成功生成并执行对应的Notebook
+    - 状态更新：execution.completed_count更新，current_phase=result_validation
 
 4.  **结果验证**: `AnalysisExecutionAgent` → `ResultValidationAgent`
     - 触发条件：所有Notebook成功执行完成，current_phase=result_validation
@@ -528,7 +598,6 @@ ResultValidationAgent ← AnalysisExecutionAgent ← CodeStructureDesignAgent �
 -   **`DataSourceFileAnalysisAgent`**: 可以**并行分析**多个数据源文件，但必须等待所有文件分析完成后才能进入下一阶段
 -   **`AnalysisIdeaPlanningAgent`**: 如果分析目标之间相互独立，可以**并行创建**多个分析规划文件
 -   **`IdeaValidationAgent`**: 可以**并行验证**多个分析规划文件，为每个plan生成独立的验证报告
--   **`CodeStructureDesignAgent`**: 可以**并行生成**多个代码设计文件，每个通过验证的plan对应一个设计文件
 -   **`AnalysisExecutionAgent`**: 如果分析任务（Notebook）之间没有依赖关系，可以**并行执行**多个Notebook
 -   **`ResultValidationAgent`**: 可以**并行验证**多个Notebook的分析结果，为每个Notebook生成独立的验证报告
 
@@ -557,6 +626,7 @@ ResultValidationAgent ← AnalysisExecutionAgent ← CodeStructureDesignAgent �
    - 提取关键信息和结构化内容
    - 识别文件中的表格、列表等结构化元素
    - 对于包含图片的文件，记录图片位置并提取图片文件
+   - **文件大小处理**：如果生成的描述文件超过20KB，自动分割成多个子文件
    - **描述策略**：生成增强版Markdown格式描述文件，保留所有上下文信息，后续Agent只读取此描述文件，不再访问原始文件
 
 ### 数据源描述文件
@@ -577,17 +647,17 @@ DataSourceFileAnalysisAgent 通过调用预定义脚本生成中间产物，然�
 
 ##### 数据处理工作流
 ```
-原始文件 → file_classifier.py → 判定数据类型 → 选择对应脚本 → 生成中间产物 → Agent融合分析 → 最终描述文件
+原始文件 → file_classifier.py → 判定数据类型 → 选择对应脚本 → 生成中间产物 → Agent处理 → 最终描述文件
 ```
 
 **结构化数据流程**：
 ```
-原始文件 → read_structured_data.py → JSON中间产物 → 融合分析 → JSON描述文件
+原始文件 → read_structured_data.py → JSON中间产物 → Agent融合分析 → JSON描述文件
 ```
 
 **非结构化数据流程**：
 ```  
-原始文件 → document_parser.py → MD中间产物 → 融合分析 → 增强MD描述文件
+原始文件 → document_parser.py → MD中间产物 → Agent检查大小并分割(>20KB) → 使用frontmatter工具更新元数据 → 增强MD描述文件
 ```
 
 ##### 中间产物类型
@@ -644,11 +714,18 @@ DataSourceFileAnalysisAgent 读取JSON中间产物并生成符合标准schema的
 ```
 
 **非结构化数据描述文件（Markdown格式）**：
-DataSourceFileAnalysisAgent 读取Markdown中间产物，补充元数据信息后生成增强版Markdown描述文件，保留所有原始内容的上下文：
+DataSourceFileAnalysisAgent 处理Markdown中间产物：
+1. **重要：不直接读取中间产物文件内容，避免占用大量上下文**
+2. 检查中间产物文件大小（使用文件系统命令，不读取内容）
+3. 如果超过20KB则调用分割工具进行分割（分割工具自动处理文件读写）
+4. 使用frontmatter工具为每个文件（原始或分割后）添加完整的YAML frontmatter元数据
+5. 生成增强版Markdown描述文件，保留所有原始内容的上下文
 
-位置：`archives/{current_task_name}/data_source/descriptions/{filename}.md`
+位置：`archives/{current_task_name}/data_source/descriptions/{filename}.md` 或 `{filename}_1.md`, `{filename}_2.md`...（分割后）
 
 格式示例：
+
+**未分割的文件**：
 ````markdown
 ---
 source_id: "2"
@@ -675,24 +752,75 @@ tags: ["项目背景", "需求分析", "业务流程"]
 ---
 
 # 原始文档完整内容
+[文档内容...]
+````
 
-[这里包含从原始文件解析出的所有文本内容、表格、结构化信息等]
+**分割后的文件（第1片）**：
+````markdown
+---
+source_id: "2"
+file_name: "project_background.docx"
+file_type: "docx"
+is_structured: false
+size: 45231
+description: "项目背景文档，包含需求分析和业务流程描述"
+structure:
+  row_count: 0
+  column_count: 0
+  columns: []
+metadata:
+  encoding: "utf-8"
+  delimiter: null
+  has_header: false
+intermediate_artifacts:
+  has_intermediate_file: true
+  intermediate_file_path: "intermediate_artifacts/project_background_intermediate.md"
+  has_images: true
+  images_directory: "intermediate_artifacts/project_background_images/"
+  processing_method: "document_script"
+tags: ["项目背景", "需求分析", "业务流程"]
+is_split: true
+part_number: 1
+total_parts: 3
+parent_file: "project_background.docx"
+---
 
-## 提取的表格
+# 原始文档内容（第1部分）
+[第1部分内容...]
+````
 
-| 列1 | 列2 | 列3 |
-|-----|-----|-----|
-| 数据1 | 数据2 | 数据3 |
+**分割后的文件（第2片）**：
+````markdown
+---
+source_id: "2"
+file_name: "project_background.docx"
+file_type: "docx"
+is_structured: false
+size: 45231
+description: "项目背景文档，包含需求分析和业务流程描述"
+structure:
+  row_count: 0
+  column_count: 0
+  columns: []
+metadata:
+  encoding: "utf-8"
+  delimiter: null
+  has_header: false
+intermediate_artifacts:
+  has_intermediate_file: true
+  intermediate_file_path: "intermediate_artifacts/project_background_intermediate.md"
+  has_images: true
+  images_directory: "intermediate_artifacts/project_background_images/"
+  processing_method: "document_script"
+tags: ["项目背景", "需求分析", "业务流程"]
+is_split: true
+part_number: 2
+total_parts: 3
+parent_file: "project_background.docx"
+---
 
-## 图片引用
-
-![图片1](intermediate_artifacts/project_background_images/image1.png)
-
-## 其他结构化内容
-
-- 列表项1
-- 列表项2
-
+# 原始文档内容（第2部分）
+[第2部分内容...]
 ````
 
 #### 字段说明
@@ -733,3 +861,51 @@ tags: ["项目背景", "需求分析", "业务流程"]
   - `has_images`: 是否包含提取的图片
   - `images_directory`: 图片目录的相对路径（如果有）
   - `processing_method`: 处理方法（structured_script 或 document_script）
+
+**分片特有字段（仅当文件被分割时）**：
+- `is_split`: 是否为分割文件（boolean）
+- `part_number`: 当前分片序号（integer）
+- `total_parts`: 总分片数（integer）
+- `parent_file`: 原始文件名（string）
+
+#### 数据源描述文件读取规则
+
+**后续Agent读取规则**：
+1. **结构化数据（.json描述文件）**：
+   - AnalysisIdeaPlanningAgent：读取JSON描述文件进行规划设计
+   - IdeaValidationAgent：读取JSON描述文件验证数据可用性
+   - AnalysisExecutionAgent：只读取规划文件，执行时从 archives/{current_task_name}/data_source/raw/ 加载原始数据
+   - ResultValidationAgent：读取JSON描述文件进行结果验证
+
+2. **非结构化数据（.md描述文件）**：
+   - AnalysisIdeaPlanningAgent：优先读取摘要文件（{filename}_summary.md），若无则读取描述文件
+   - IdeaValidationAgent：读取摘要文件或描述文件验证内容完整性
+   - AnalysisExecutionAgent：只读取规划文件中的extracted_info，必要时读取摘要文件
+   - ResultValidationAgent：读取摘要文件进行结果验证
+
+3. **摘要文件（{filename}_summary.md）**：
+   - **生成条件**：非结构化数据描述文件>10KB或存在分片时自动生成
+   - **生成逻辑**：
+     - 对于未分片的大文件（>10KB）：读取单个描述文件，提取核心内容生成3-5KB的摘要
+     - 对于分片文件：逐个读取各分片，智能合并核心内容到摘要文件，避免重复
+   - **内容格式**：
+     ```markdown
+     # {原文件名} 核心内容摘要
+     
+     ## 文档概述
+     [简要描述文档类型、用途、时间范围等]
+     
+     ## 关键数据与指标
+     - [核心数据点1]
+     - [核心数据点2]
+     
+     ## 重要发现与结论
+     [主要发现和结论的自然语言描述]
+     
+     ## 关键表格与图表说明
+     [重要表格的简化版本或说明]
+     
+     ## 业务洞察
+     [对分析有价值的业务信息]
+     ```
+   - **用途**：避免Agent读取大文件，提供精炼的信息概览，作为规划文件中extracted_info的数据来源

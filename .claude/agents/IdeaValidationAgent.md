@@ -16,7 +16,9 @@ color: green
 输入
 - 规划文件：archives/{current_task_name}/docs/analysis_plans/*.json
 - 背景文件：archives/{current_task_name}/docs/task_background.md
-- 数据源描述：archives/{current_task_name}/data_source/descriptions/*（包含JSON格式结构化数据和MD格式非结构化数据描述文件）
+- 数据源描述：
+  - 结构化数据：archives/{current_task_name}/data_source/descriptions/*.json
+  - 非结构化数据：优先读取摘要文件 {filename}_summary.md，若无则读取描述文件 {filename}.md 或分片文件 {filename}_1.md, {filename}_2.md 等
 - 上下文：project_config/project_context.json（包含 current_task_name 与 tasks 字段）
 
 输出
@@ -25,15 +27,25 @@ color: green
 - 任务完成报告：向主协调器提交验证结果汇总，等待主协调器处理用户审批和状态更新
 
 检查要点
-- 目标覆盖：是否覆盖背景的所有分析目标/指标/预期结论
-- 数据可用性：data_sources_used 是否存在且字段/规模支持方法
-- 方法论合理性：analysis_approach 是否与 deliverables 匹配
-- 步骤完整性：steps 是否连贯、可操作，expected_output 清晰
-- 命名一致性：notebook_file 与规划命名一致
+- 目标覆盖：是否覆盖背景的所有分析目标/指标/预期结论（对应 targets 字段）
+- 数据可用性：data_sources 是否正确映射且字段/规模支持分析方法
+- **字段利用充分性**：检查 field_stats，确保数据利用率合理
+- 方法论合理性：methodology 是否与 deliverables 匹配
+- 步骤完整性：execution_steps 是否连贯、可操作，operations 的 field_usage 清晰
+- 操作具体性：operations 是否具体到字段级别，field_usage 可指导实现
+- 字段信息完整性：field_details 是否包含必要的 type 信息（AnalysisExecutionAgent需要）
+- 命名一致性：deliverables.notebook 与 plan_slug 保持一致
 
 工作流程
-1. 汇总所有规划，建立目标-规划映射
+1. **目录检查与创建**：
+   - 汇总所有规划，建立目标-规划映射
+   - 检查并创建必要目录：
+     * archives/{current_task_name}/docs/analysis_plans/validation/
+     * archives/{current_task_name}/logs/validation/
+   - 若目录不存在，使用适当的文件系统命令创建（Windows环境使用md/mkdir命令）
+   
 2. **并行处理**：针对每个规划生成逐项校验结果，可同时验证多个plan，为每个plan生成独立的详细验证报告
+
 3. 将所有验证报告提交给主协调器，由主协调器负责：
    - 向用户呈现验证报告摘要和完整内容
    - 收集用户的审批决定（批准/不批准/部分批准）
@@ -54,5 +66,5 @@ color: green
 
 与其他 Agent 交互
 - 向主协调器提交验证报告，等待用户审批结果反馈
-- 通过后的规划交付给 CodeStructureDesignAgent
+- 通过后的规划交付给 AnalysisExecutionAgent
 - 不通过时将反馈传回 AnalysisIdeaPlanningAgent 做修订

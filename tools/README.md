@@ -8,25 +8,62 @@ tools/
 │   ├── file_classifier.py      # 文件类型分类器
 │   ├── read_structured_data.py  # 结构化数据处理脚本
 │   ├── document_parser.py       # 非结构化数据处理脚本
-│   └── README.md               # 数据读取工具详细说明
+│   ├── file_splitter.py         # 文件分割工具
+│   ├── frontmatter_tool.py      # Frontmatter处理工具
+│   ├── README.md               # 数据读取工具详细说明
+│   ├── README_file_splitter.md  # 文件分割工具说明
+│   └── README_frontmatter_tool.md # Frontmatter工具说明
 ├── notebook_runners/           # Notebook运行器相关工具
 │   ├── nb_runner.py           # Notebook运行器脚本
 │   └── README_nb_runner.md    # 运行器使用说明
 └── README.md                  # 本文件
 ```
 
+## 数据处理流程
+
+DataSourceFileAnalysisAgent 通过 Bash 工具调用脚本处理数据：
+
+```
+原始文件 → file_classifier.py → 判定数据类型 → 选择对应脚本 → 生成中间产物 → 检查文件大小 → file_splitter.py(如需要) → frontmatter_tool.py → 最终描述文件（JSON或MD）
+```
+
+### 处理示例
+
+#### 结构化数据处理
+```bash
+# 1. 分类文件
+python tools/data_readers/file_classifier.py data.csv
+
+# 2. 生成中间产物
+python tools/data_readers/read_structured_data.py --files data.csv --intermediate --sample_rows 20
+```
+
+#### 非结构化数据处理
+```bash
+# 1. 分类文件
+python tools/data_readers/file_classifier.py document.docx
+
+# 2. 生成中间产物
+python tools/data_readers/document_parser.py document.docx
+
+# 3. 检查大小并分割（如需要）
+python tools/data_readers/file_splitter.py intermediate.md -s 20 --delete-original
+
+# 4. 添加 frontmatter
+python tools/data_readers/frontmatter_tool.py single intermediate.md \
+  --frontmatter '{"source_id": "1", "description": "..."}' \
+  -o final.md --merge update
+```
+
 ## 工具说明
 
 ### data_readers
 
-此目录包含用于 DataSourceFileAnalysisAgent 的数据源分析工具，实现了完整的数据处理流程：
-
-#### 核心脚本
+数据源分析工具集，实现了完整的数据处理流程：
 
 - **file_classifier.py**: 智能文件类型分类器
   - 自动判定文件为结构化或非结构化数据
   - 支持图片检测，有图片的文件自动归类为非结构化
-  - 输出分类结果和推荐处理脚本
 
 - **read_structured_data.py**: 结构化数据处理脚本
   - 处理 CSV、Excel 等结构化数据文件
@@ -38,29 +75,48 @@ tools/
   - 支持图片提取和图文混排处理
   - 生成 Markdown 格式中间产物
 
-#### 数据处理流程
+- **file_splitter.py**: 文件分割工具
+  - 智能分割超过 20KB 的 Markdown 文件
+  - 在标题处分割，保持内容完整性
+  - 自动处理分片文件的 frontmatter
 
-```
-原始文件 → file_classifier.py → 判定数据类型 → 选择对应脚本 → 生成中间产物 → DataSourceFileAnalysisAgent融合分析 → 最终描述文件（JSON或MD）
-```
-
-#### 中间产物类型
-
-- **结构化数据**: 生成 `{filename}_intermediate.json`，包含数据结构分析、类型推断、采样数据等
-- **非结构化数据**: 生成 `{filename}_intermediate.md`，包含全文内容、提取的图片、表格转换等
+- **frontmatter_tool.py**: Frontmatter 处理工具
+  - 流式处理文件，添加或更新 YAML frontmatter
+  - 支持多种合并策略（update/replace/merge_deep）
+  - 避免大文件内存占用
 
 详细使用方法请参考 `data_readers/README.md`
 
 ### notebook_runners
 
-此目录包含用于运行和管理 Jupyter Notebook 的工具脚本：
+Jupyter Notebook 运行和管理工具：
 
-- `nb_runner.py`: 主要的 Notebook 运行脚本，支持运行整个 Notebook、特定单元格或单元格范围
-- `README_nb_runner.md`: 详细的使用说明文档
+- **nb_runner.py**: Notebook 运行脚本
+  - 支持运行整个 Notebook、特定单元格或单元格范围
+  - 提供执行结果验证和错误处理
 
-## 使用方法
+#### 使用示例
 
-请查看各个子目录中的 README 文件获取具体的使用方法和参数说明。
+AnalysisExecutionAgent 通过 Bash 工具调用脚本执行 Notebook：
+
+```bash
+# 运行整个 Notebook
+python tools/notebook_runners/nb_runner.py "D:\Program\jupyter\{project_name}\{current_task_name}\analysis.ipynb" --all
+
+# 运行特定单元格（如第 0, 2, 4 个单元格）
+python tools/notebook_runners/nb_runner.py notebook.ipynb --cells "0,2,4"
+
+# 运行单元格范围（如第 1-3 个单元格）
+python tools/notebook_runners/nb_runner.py notebook.ipynb --range "1-3"
+
+# 列出所有单元格信息
+python tools/notebook_runners/nb_runner.py notebook.ipynb --list
+
+# 读取特定单元格的输出
+python tools/notebook_runners/nb_runner.py notebook.ipynb --read-cell "2"
+```
+
+详细使用方法请参考 `notebook_runners/README_nb_runner.md`
 
 ## 与 Multi-Agent 系统的集成
 

@@ -927,17 +927,42 @@ def build_description(path):
             os.makedirs(intermediate_dir, exist_ok=True)
             intermediate_path = os.path.join(intermediate_dir, f"{base_name}_intermediate.md")
             
+            # 构建标准YAML frontmatter格式
+            frontmatter_data = {
+                'file_name': meta['file_name'],
+                'file_type': body.get('file_type', meta['detected_type']),
+                'file_size_bytes': meta['size'],
+                'modified_time': meta['modified_time'],
+                'is_structured': body.get('is_structured', False),
+                'extraction_method': 'document_parser'
+            }
+            
+            # 添加可选字段
+            if images and len(images) > 0:
+                frontmatter_data['images_extracted'] = len(images)
+                frontmatter_data['has_images'] = True
+            else:
+                frontmatter_data['has_images'] = False
+                
+            if body.get('row_count'):
+                frontmatter_data['total_rows'] = body.get('row_count')
+            
+            # 如果有图片，添加图片信息
+            if images:
+                frontmatter_data['extracted_images'] = [
+                    {
+                        'filename': img['filename'],
+                        'size_bytes': img['size_bytes']
+                    } for img in images
+                ]
+            
             with open(intermediate_path, 'w', encoding='utf-8') as f:
-                f.write(f"# {meta['file_name']}\n\n")
-                f.write(f"**File Type:** {body.get('file_type', meta['detected_type'])}\n")
-                f.write(f"**File Size:** {meta['size']} bytes\n")
-                f.write(f"**Modified:** {meta['modified_time']}\n")
-                if images:
-                    f.write(f"**Images Extracted:** {len(images)}\n")
-                if body.get('row_count'):
-                    f.write(f"**Total Rows:** {body.get('row_count')}\n")
-                f.write(f"**Structured Data:** {'Yes' if body.get('is_structured', False) else 'No'}\n\n")
+                # 写入标准YAML frontmatter
+                import yaml
+                f.write("---\n")
+                f.write(yaml.dump(frontmatter_data, allow_unicode=True, sort_keys=False, default_flow_style=False))
                 f.write("---\n\n")
+                # 写入正文内容
                 f.write(intermediate_md)
                 
             print(f"Intermediate artifact saved to: {intermediate_path}")

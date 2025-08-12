@@ -23,6 +23,7 @@ color: orange
 输出
 - 结构化数据描述文件: archives/{current_task_name}/data_source/descriptions/{原文件同名}.json（遵循 CLAUDE.md 提供的结构化数据 JSON Schema）
 - 非结构化数据描述文件: archives/{current_task_name}/data_source/descriptions/{原文件同名}.md（增强版Markdown格式，包含完整原始内容和YAML frontmatter元数据）
+- **非结构化数据摘要文件**: archives/{current_task_name}/data_source/descriptions/{原文件同名}_summary.md（当描述文件>10KB或被分片时生成，包含核心内容的自然语言摘要）
 - 任务完成报告: 向主协调器报告统计信息（如：总文件数、处理成功数、失败数、错误详情等）
 - 日志: archives/{current_task_name}/logs/data_analysis/{yyyyMMdd_HHmmss}.log
 
@@ -30,13 +31,31 @@ color: orange
 - 文件类型识别：csv、xlsx、xls、markdown、doc、other
 - 结构化数据处理：读取表头、推断列类型、均匀抽样几十行、统计行列数，生成JSON描述文件
 - 非结构化数据处理：全文读取（规模可控），提取标题/段落/列表/表格等结构化线索，生成增强版Markdown描述文件保留完整上下文
+- **摘要文件生成**：对>10KB的非结构化描述文件或分片文件，生成MD格式摘要文件，用自然语言总结最核心的内容、关键数据、重要结论
 - 元数据提取：编码、分隔符、是否有表头、文件大小
 - tags 生成：结合文件名、目录、背景关键词进行简单标注
 - 并发处理：可并行分析多个文件，保证线程安全的 source_id 分配与进度更新，但须等待所有文件完成后才进入下一阶段
 
+**必须使用的工具脚本**（禁止手动实现相同功能）：
+- `tools/data_readers/file_classifier.py` - 文件类型分类
+- `tools/data_readers/read_structured_data.py` - 结构化数据处理
+- `tools/data_readers/document_parser.py` - 非结构化数据处理
+- `tools/data_readers/file_splitter.py` - 大文件分割
+- `tools/data_readers/frontmatter_tool.py` - Frontmatter处理
+
 工作流程
-1. 读取 project_context.json，获取 current_task_name 和当前阶段信息
-2. 枚举 archives/{current_task_name}/data_source/raw/ 下所有文件，统计文件总数
+1. **目录检查与创建**：
+   - 读取 project_context.json，获取 current_task_name 和当前阶段信息
+   - 检查并创建必要目录：
+     * archives/{current_task_name}/data_source/descriptions/
+     * archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/
+     * archives/{current_task_name}/logs/data_analysis/
+   - 若目录不存在，使用适当的文件系统命令创建（Windows环境使用md/mkdir命令）
+
+2. **枚举与验证数据源**：
+   - 枚举 archives/{current_task_name}/data_source/raw/ 下所有文件，统计文件总数
+   - 验证 archives/{current_task_name}/data_source/raw/ 目录存在且包含至少1个数据文件
+   
 3. **并行处理**每个文件的三阶段处理流程：
    
    **阶段1：文件分类**
@@ -59,7 +78,66 @@ color: orange
    - 分配递增的 source_id（从1开始）
    - 根据数据类型生成对应格式的描述文件：
      - **结构化数据**：构建符合 CLAUDE.md Schema 的JSON描述文件，写入 `archives/{current_task_name}/data_source/descriptions/{filename}.json`
-     - **非结构化数据**：生成增强版Markdown描述文件，在中间产物基础上添加YAML frontmatter元数据，写入 `archives/{current_task_name}/data_source/descriptions/{filename}.md`
+     - **非结构化数据**：
+       1. **重要：禁止直接读取中间产物文件内容**
+          - 不要使用 Read 工具读取 `intermediate_artifacts/{filename}_intermediate.md`
+          - 原因：文件可能超过20KB，直接读取会占用大量上下文
+       2. 先检查中间产物文件大小：
+          - 使用 `ls -lh` 或 Python `os.path.getsize()` 获取文件大小
+          - 不要读取文件内容来判断大小
+       3. 如果文件 > 20KB：
+          - 直接调用文件分割工具进行分割（不读取原文件）
+          - 命令：`python tools/data_readers/file_splitter.py archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.md -o archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/ -s 20 --delete-original`
+          - 生成多个子文件：`archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate_1.md`, `{filename}_intermediate_2.md`...
+          - 分割工具会自动处理frontmatter和内容分割
+       4. 如果文件 ≤ 20KB：
+          - 直接复制文件到最终位置
+          - 使用文件操作工具（如 cp 命令）而非读取内容
+       5. 对每个最终文件添加或更新frontmatter：
+          - 使用 `tools/data_readers/frontmatter_tool.py` 更新文件的 frontmatter
+          - 示例：`python frontmatter_tool.py single file.md --frontmatter '{"source_id": "1", "description": "...", "tags": ["..."]}' --merge update`
+          - 工具会流式处理文件，不会一次性读取整个文件到内存
+          - 采用 'update' 合并策略，智能合并已有的 frontmatter（如来自分割工具）
+          - frontmatter包含完整的元数据字段
+          - 分片文件额外包含：is_split、part_number、total_parts、parent_file
+   
+   **阶段4：生成摘要文件（仅非结构化数据）**
+   - 检查非结构化数据描述文件大小和分片情况
+   - 如果文件>10KB或存在分片：
+     1. **对于未分片文件（>10KB）**：
+        - 读取单个描述文件
+        - 提取核心内容：关键数据点、重要表格、主要结论、核心指标
+        - 生成自然语言摘要，控制在3-5KB
+        - 写入 `{filename}_summary.md`
+     2. **对于分片文件**：
+        - 初始化空摘要文件 `{filename}_summary.md`
+        - 逐个读取各分片（`{filename}_1.md`, `{filename}_2.md`...）
+        - 每读取一个分片后：
+          * 提取该分片的核心内容
+          * 将新内容智能合并到现有摘要中
+          * 避免重复，保持逻辑连贯
+          * 更新摘要文件
+        - 最终摘要包含所有分片的精华内容
+     3. **摘要文件格式**：
+        ```markdown
+        # {原文件名} 核心内容摘要
+        
+        ## 文档概述
+        [简要描述文档类型、用途、时间范围等]
+        
+        ## 关键数据与指标
+        - [核心数据点1]
+        - [核心数据点2]
+        
+        ## 重要发现与结论
+        [主要发现和结论的自然语言描述]
+        
+        ## 关键表格与图表说明
+        [重要表格的简化版本或说明]
+        
+        ## 业务洞察
+        [对分析有价值的业务信息]
+        ```
 
 4. 全部完成后，生成任务完成报告并提交给主协调器（包含：总文件数、成功处理数、失败数、错误摘要等）
 
