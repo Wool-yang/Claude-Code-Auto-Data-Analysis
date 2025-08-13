@@ -8,7 +8,20 @@
 
 ### 项目架构
 
-本项目采用Multi-Agent架构，包含以下核心Agent（注意：本项目采用“按 task 隔离”的存档策略，所有产物写入 archives/{current_task_name}/ 目录，详见“任务存档与每任务数据源”）：
+本项目采用Multi-Agent架构，包含以下核心Agent（注意：本项目采用"按 task 隔离"的存档策略，所有产物写入 archives/{current_task_name}/ 目录，详见"任务存档与每任务数据源"）：
+
+#### Agent 文件位置与使用方式
+所有Agent的详细实现文档位于 `Agents/` 目录下：
+- `Agents/DataSourceFileAnalysisAgent.md` - 数据源文件分析Agent
+- `Agents/AnalysisIdeaPlanningAgent.md` - 分析思路规划Agent  
+- `Agents/IdeaValidationAgent.md` - 思路验证Agent
+- `Agents/AnalysisExecutionAgent.md` - 分析执行Agent
+- `Agents/ResultValidationAgent.md` - 结果验证Agent
+
+**重要说明**：
+- **禁止使用Task工具调用Agent**：不要使用Task工具来执行Agent任务
+- **执行方式**：主流程协调器（当前Claude助手）直接读取Agent文档并按照其定义执行相应功能
+- **角色扮演**：执行时，主协调器将扮演对应Agent的角色，遵循其文档中定义的规范和流程
 
 #### 主流程协调器
 主流程协调器是整个Multi-Agent系统的核心组件，负责项目的总体调度、状态维护与用户门控，确保各子Agent按阶段有序交付可复用产物。**在Claude Code环境中，主流程协调器由用户直接调用的Claude助手担任**。
@@ -248,13 +261,13 @@
 ```
 D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
 ├── .claude/                                        # Claude Code特定目录
-│   ├── agents/                                     # Agent实现文件
-│   │   ├── AnalysisExecutionAgent.md               # 分析执行Agent
-│   │   ├── AnalysisIdeaPlanningAgent.md            # 分析思路规划Agent
-│   │   ├── DataSourceFileAnalysisAgent.md          # 数据源文件分析Agent
-│   │   ├── IdeaValidationAgent.md                  # 思路验证Agent
-│   │   └── ResultValidationAgent.md                # 结果验证Agent
 │   └── settings.local.json                         # Claude Code本地配置
+├── Agents/                                         # Agent实现文件
+│   ├── AnalysisExecutionAgent.md                   # 分析执行Agent
+│   ├── AnalysisIdeaPlanningAgent.md                # 分析思路规划Agent
+│   ├── DataSourceFileAnalysisAgent.md              # 数据源文件分析Agent
+│   ├── IdeaValidationAgent.md                      # 思路验证Agent
+│   └── ResultValidationAgent.md                    # 结果验证Agent
 ├── .mcp.json                                       # MCP服务器配置文件
 ├── CLAUDE.md                                       # 本项目配置文件
 ├── package.json                                    # Node.js项目配置
@@ -290,6 +303,9 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
 │   ├── notebook_runners/                           # Notebook运行器相关工具
 │   │   ├── nb_runner.py                            # Notebook运行器脚本
 │   │   └── README_nb_runner.md                     # 运行器使用说明
+│   ├── notebook_config/                         # Notebook环境初始化工具
+│   │   ├── notebook_env_config.md               # Notebook环境配置代码模板
+│   │   └── README.md                            # 环境配置使用说明
 │   └── README.md                                   # 工具脚本说明文档
 ├── node_modules/                                   # Node.js依赖包（自动生成）
 └── logs/                                           # 系统或运行级日志目录（Agent 产物请写入 archives/{current_task_name}/logs/）
@@ -318,6 +334,7 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
 
 #### AnalysisExecutionAgent 必须使用的工具
 - `tools/notebook_runners/nb_runner.py` - Notebook执行和验证
+- `tools/notebook_config/notebook_env_config.md` - Notebook环境初始化（参照模板内容设置）
 
 #### 禁止的手动实现行为
 - ❌ 通过文件扩展名手动判断文件类型
@@ -325,6 +342,7 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
 - ❌ 手动解析 Word/Excel 文档而不使用 document_parser.py
 - ❌ 手动分割大文件或处理 frontmatter
 - ❌ 使用 nbconvert 等工具执行 Notebook 而不使用 nb_runner.py
+- ❌ 手动配置Notebook环境或使用有问题的初始化代码
 
 #### 标准调用格式
 详细的调用方法和参数请参考 `tools/README.md` 和各子目录的说明文档。

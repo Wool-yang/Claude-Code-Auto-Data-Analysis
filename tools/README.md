@@ -16,6 +16,9 @@ tools/
 ├── notebook_runners/           # Notebook运行器相关工具
 │   ├── nb_runner.py           # Notebook运行器脚本
 │   └── README_nb_runner.md    # 运行器使用说明
+├── notebook_config/           # Notebook环境初始化工具
+│   ├── notebook_env_config.md # Notebook环境配置模板
+│   └── README.md              # 环境配置使用说明
 └── README.md                  # 本文件
 ```
 
@@ -118,12 +121,24 @@ python tools/notebook_runners/nb_runner.py notebook.ipynb --read-cell "2"
 
 详细使用方法请参考 `notebook_runners/README_nb_runner.md`
 
+### notebook_config
+
+Notebook 环境初始化工具：
+
+- **notebook_env_config.md**: Notebook 环境初始化代码模板
+  - 导入数据分析必要的基础库（pandas, numpy, plotly等）
+  - 配置Python环境设置（警告过滤、显示选项等）
+  - 设置Plotly中文字体和可视化模板
+  - 解决中文字符显示和图表导出问题
+
+详细使用方法请参考 `notebook_config/README.md`
+
 ## 与 Multi-Agent 系统的集成
 
 这些工具脚本是 Claude Code 自动化数据分析系统的重要组成部分：
 
 - **DataSourceFileAnalysisAgent** 使用 `data_readers` 工具进行数据源分析
-- **AnalysisExecutionAgent** 使用 `notebook_runners` 工具执行分析代码
+- **AnalysisExecutionAgent** 使用 `notebook_runners` 工具执行分析代码，使用 `notebook_config` 工具初始化Notebook环境
 - 所有脚本都支持 UTF-8 编码，确保在 Windows 环境下的中文兼容性
 
 ## 开发规范

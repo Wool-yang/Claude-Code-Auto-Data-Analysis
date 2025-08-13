@@ -7,8 +7,13 @@
 ```
 Claude-Code-Auto-Data-Analysis/
 ├── .claude/                    # Claude Code配置
-│   ├── agents/                 # Agent实现文件
 │   └── settings.local.json    # 本地配置（不提交）
+├── Agents/                     # Agent实现文件
+│   ├── AnalysisExecutionAgent.md           # 分析执行Agent
+│   ├── AnalysisIdeaPlanningAgent.md        # 分析思路规划Agent
+│   ├── DataSourceFileAnalysisAgent.md      # 数据源文件分析Agent
+│   ├── IdeaValidationAgent.md              # 思路验证Agent
+│   └── ResultValidationAgent.md            # 结果验证Agent
 ├── .mcp.json                   # MCP服务器配置
 ├── CLAUDE.md                   # 项目配置文档
 ├── PROJECT_STRUCTURE.md        # 本文档
@@ -31,7 +36,8 @@ Claude-Code-Auto-Data-Analysis/
 │       └── logs/              # 任务级日志
 └── tools/                     # 工具脚本
     ├── data_readers/          # 数据读取工具
-    └── notebook_runners/      # Notebook运行工具
+    ├── notebook_runners/      # Notebook运行工具
+    └── notebook_config/       # Notebook环境初始化
 ```
 
 ## 使用说明
