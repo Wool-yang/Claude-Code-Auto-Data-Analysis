@@ -148,9 +148,9 @@ data_source/raw/*
 # Archives directory - contains task-specific data and results
 # Ignore everything in archives except .gitkeep files and example structure
 archives/*
+!archives/.gitkeep
 !archives/.example_task/
-archives/.example_task/**
-!archives/.example_task/**/.gitkeep
+!archives/.example_task/**
 # Null files
 nul
 # Tracking files
