@@ -2,245 +2,403 @@
 # -*- coding: utf-8 -*-
 """
 Jupyter Notebook Runner Script
-可以运行整个notebook文件、特定单元格或某个区间的单元格，并可选显示输出。
+简化重构版本：去除过度设计，保持核心功能，完全向后兼容
 """
 
 import sys
-import io
-import json
 import os
 import argparse
-from typing import List, Optional
-import nbformat
-from nbconvert.preprocessors import ExecutePreprocessor
 
-# 设置标准输出编码为UTF-8
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+# 抑制IPython调试器警告，优化Agent体验
+os.environ['PYDEVD_DISABLE_FILE_VALIDATION'] = '1'
 
 
-def load_notebook(notebook_path: str) -> nbformat.NotebookNode:
-    """加载notebook文件"""
-    with open(notebook_path, 'r', encoding='utf-8') as f:
-        return nbformat.read(f, as_version=4)
+def print_error_and_exit(message: str, exit_code: int = 1):
+    """统一的错误输出和退出函数"""
+    print(f"错误: {message}")
+    sys.exit(exit_code)
 
 
-def save_notebook(notebook: nbformat.NotebookNode, notebook_path: str) -> None:
-    """保存notebook文件"""
-    with open(notebook_path, 'w', encoding='utf-8') as f:
-        nbformat.write(notebook, f)
-
-
-def _print_cell_output(cell, cell_index: int) -> None:
-    """内部辅助函数，打印单个单元格的输出"""
-    if not hasattr(cell, 'outputs'):
-        return
-        
-    print(f"--- 单元格 {cell_index} 的输出 ---")
-    for output in cell.outputs:
-        if output.output_type == 'stream':
-            print(output.text.strip())
-        elif output.output_type == 'execute_result' or output.output_type == 'display_data':
-            if 'text/plain' in output.data:
-                print(output.data['text/plain'])
-            if 'image/png' in output.data:
-                print("[图片输出，请在Notebook中查看]")
-        elif output.output_type == 'error':
-            print(f"错误: {output.ename}")
-            print('\\n'.join(output.traceback))
-    print(f"--- 输出结束 ---")
-
-
-def run_entire_notebook(notebook_path: str, kernel_name: str = 'python3', show_output: bool = False) -> None:
-    """运行整个notebook"""
-    print(f"正在运行整个notebook: {notebook_path}")
-    
-    notebook = load_notebook(notebook_path)
-    ep = ExecutePreprocessor(timeout=600, kernel_name=kernel_name)
-    
-    try:
-        executed_notebook, _ = ep.preprocess(notebook, {'metadata': {'path': os.path.dirname(notebook_path)}})
-        
-        if show_output:
-            print("\\n" + "="*20 + " 运行结果 " + "="*20)
-            for i, cell in enumerate(executed_notebook.cells):
-                if cell.cell_type == 'code':
-                    _print_cell_output(cell, i)
-            print("="*52 + "\\n")
-
-        save_notebook(executed_notebook, notebook_path)
-        print("notebook执行完成并已保存")
-        
-    except Exception as e:
-        print(f"执行notebook时出错: {str(e)}")
-        sys.exit(1)
-
-
-def run_specific_cells(notebook_path: str, cell_indices: List[int], kernel_name: str = 'python3', show_output: bool = False) -> None:
-    """运行特定的单元格"""
-    print(f"正在运行notebook: {notebook_path} 中的特定单元格: {cell_indices}")
-    
-    original_notebook = load_notebook(notebook_path)
-    
-    for idx in cell_indices:
-        if idx < 0 or idx >= len(original_notebook.cells):
-            print(f"错误: 单元格索引 {idx} 超出范围 [0, {len(original_notebook.cells)-1}]")
-            sys.exit(1)
-    
-    temp_notebook = nbformat.v4.new_notebook()
-    temp_notebook.metadata = original_notebook.metadata
-    
-    for idx in cell_indices:
-        temp_notebook.cells.append(original_notebook.cells[idx])
-    
-    ep = ExecutePreprocessor(timeout=600, kernel_name=kernel_name)
-    
-    try:
-        executed_temp_notebook, _ = ep.preprocess(temp_notebook, {'metadata': {'path': os.path.dirname(notebook_path)}})
-        
-        if show_output:
-            print("\\n" + "="*20 + " 运行结果 " + "="*20)
-            for i, original_idx in enumerate(cell_indices):
-                _print_cell_output(executed_temp_notebook.cells[i], original_idx)
-            print("="*52 + "\\n")
-        
-        for i, original_idx in enumerate(cell_indices):
-            original_notebook.cells[original_idx] = executed_temp_notebook.cells[i]
-        
-        save_notebook(original_notebook, notebook_path)
-        print(f"指定单元格执行完成并已保存到原notebook")
-        
-    except Exception as e:
-        print(f"执行指定单元格时出错: {str(e)}")
-        sys.exit(1)
-
-
-def run_cell_range(notebook_path: str, start_idx: int, end_idx: int, kernel_name: str = 'python3', show_output: bool = False) -> None:
-    """运行指定范围的单元格"""
-    print(f"正在运行notebook: {notebook_path} 中索引 {start_idx} 到 {end_idx} 的单元格")
-    
-    original_notebook = load_notebook(notebook_path)
-    
-    if start_idx < 0 or end_idx >= len(original_notebook.cells) or start_idx > end_idx:
-        print(f"错误: 单元格范围 [{start_idx}, {end_idx}] 无效")
-        sys.exit(1)
-    
-    temp_notebook = nbformat.v4.new_notebook()
-    temp_notebook.metadata = original_notebook.metadata
-    
-    cell_indices_in_range = list(range(start_idx, end_idx + 1))
-    for idx in cell_indices_in_range:
-        temp_notebook.cells.append(original_notebook.cells[idx])
-    
-    ep = ExecutePreprocessor(timeout=600, kernel_name=kernel_name)
-    
-    try:
-        executed_temp_notebook, _ = ep.preprocess(temp_notebook, {'metadata': {'path': os.path.dirname(notebook_path)}})
-        
-        if show_output:
-            print("\\n" + "="*20 + " 运行结果 " + "="*20)
-            for i, original_idx in enumerate(cell_indices_in_range):
-                _print_cell_output(executed_temp_notebook.cells[i], original_idx)
-            print("="*52 + "\\n")
-            
-        for i, original_idx in enumerate(cell_indices_in_range):
-            original_notebook.cells[original_idx] = executed_temp_notebook.cells[i]
-        
-        save_notebook(original_notebook, notebook_path)
-        print(f"单元格范围 [{start_idx}, {end_idx}] 执行完成并已保存到原notebook")
-        
-    except Exception as e:
-        print(f"执行单元格范围时出错: {str(e)}")
-        sys.exit(1)
-
-
-def list_cells(notebook_path: str) -> None:
-    """列出notebook中的所有单元格"""
-    print(f"notebook: {notebook_path} 中的单元格:")
-    
-    notebook = load_notebook(notebook_path)
-    
-    for i, cell in enumerate(notebook.cells):
-        cell_type = cell.cell_type
-        try:
-            if cell_type == 'code':
-                source_lines = cell.source.split('\\n')
-                preview = source_lines[0][:50] + '...' if len(source_lines[0]) > 50 else source_lines[0]
-                if len(source_lines) > 1:
-                    preview += ' ...'
-                print(f"  [{i}] {cell_type}: {preview}")
-            else:
-                content_lines = cell.source.strip().split('\\n')
-                preview = content_lines[0][:50] + '...' if len(content_lines[0]) > 50 else content_lines[0]
-                print(f"  [{i}] {cell_type}: {preview}")
-        except Exception as e:
-            print(f"  [{i}] {cell_type}: 无法显示预览 (错误: {str(e)})")
-
-
-def read_cell_output(notebook_path: str, cell_index: int) -> None:
-    """读取并显示指定单元格的输出"""
-    print(f"正在读取 notebook: {notebook_path} 中索引为 {cell_index} 的单元格输出...")
-    
-    notebook = load_notebook(notebook_path)
-
-    if cell_index < 0 or cell_index >= len(notebook.cells):
-        print(f"错误: 单元格索引 {cell_index} 超出范围 [0, {len(notebook.cells)-1}]")
-        sys.exit(1)
-
-    cell = notebook.cells[cell_index]
-    if cell.cell_type != 'code':
-        print(f"信息: 索引 {cell_index} 的单元格不是代码单元格，没有输出。")
-        return
-
-    if not hasattr(cell, 'outputs') or not cell.outputs:
-        print(f"信息: 索引 {cell_index} 的代码单元格没有输出。")
-        return
-
-    _print_cell_output(cell, cell_index)
+# 导入重构后的核心模块
+try:
+    from core.notebook_executor import NotebookExecutor, run_entire_notebook
+    from core.notebook_editor import NotebookEditor, create_blank_notebook, edit_cell_content, delete_cell, insert_cell, move_cell, copy_cell, convert_cell_type, clear_cell_output, batch_delete_cells, batch_clear_outputs, batch_convert_cells, get_cell_info
+    from core.notebook_analyzer import NotebookAnalyzer, show_notebook_status
+    from core.image_manager import ImageManager, save_notebook_images, list_notebook_images, clean_notebook_images
+    from utils.notebook_io import NotebookIO, create_backup, list_backups, restore_backup, delete_backup, cleanup_old_backups, show_backup_info
+    from utils.helpers import parse_cell_range, format_execution_result, resolve_cell_identifiers
+except ImportError as e:
+    print(f"模块导入失败: {e}")
+    print("请检查新模块是否正确创建")
+    sys.exit(1)
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Jupyter Notebook Runner')
+    # 设置输出编码，解决Windows gbk编码问题
+    import sys
+    import io
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        try:
+            sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+            sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+        except Exception:
+            pass
+    
+    parser = argparse.ArgumentParser(
+        description='Jupyter Notebook Runner - 专为AnalysisExecutionAgent优化的智能执行工具',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog='''
+核心功能分类:
+
+  执行操作:
+    --all --show-output                   # 执行所有cell
+    --cells "0,1,2" --show-output         # 执行指定cell(支持批量)
+  
+  查询分析:
+    --status [exec|structure|deps|errors|all]  # 状态查询
+    --get [INDEX|ID|all]                       # 获取cell信息  
+    --search "pattern"                          # 搜索(支持正则)
+  
+  编辑操作:
+    --create                              # 创建空白notebook
+    --edit-cell N --code-stdin            # 编辑cell(Here Document)
+    --insert-cell N [TYPE] --code-stdin   # 插入cell(Here Document)
+  
+  批量操作:
+    --batch-delete "1,3,5"    --batch-clear-outputs "1-10"
+    --batch-convert "2-4" markdown
+  
+  备份管理:
+    --backup "description"    --list-backups    --restore-backup ID
+
+附加选项:
+  --show-output                         # 执行cell时在控制台显示输出结果
+  --output-only                         # 配合--get使用，仅获取输出信息
+  --code-stdin                          # 从标准输入读取代码内容(配合编辑操作)
+  --dry-run                             # 预览模式，不实际修改文件
+  --case-sensitive                      # 搜索时大小写敏感
+
+标准代码输入方式 (Here Document + stdin):
+  cat <<'EOF' | python nb_runner.py notebook.ipynb --edit-cell 0 --code-stdin
+  import pandas as pd
+  data = {"name": ["Alice", "Bob"], "age": [25, 30]}
+  df = pd.DataFrame(data)
+  print('支持所有引号类型!')
+  EOF
+
+详细文档: tools/notebook_runners/README_nb_runner.md
+        ''')
     parser.add_argument('notebook_path', help='Notebook文件路径')
     
+    # 核心执行选项（保持向后兼容）
     action_group = parser.add_mutually_exclusive_group()
-    action_group.add_argument('--all', action='store_true', help='运行整个notebook')
-    action_group.add_argument('--cells', type=str, help='运行特定单元格，用逗号分隔索引，如 "1,3,5"')
-    action_group.add_argument('--range', type=str, help='运行单元格范围，格式为 "start-end"，如 "2-5"')
-    action_group.add_argument('--list', action='store_true', help='列出notebook中的所有单元格')
-    action_group.add_argument('--read-cell', type=int, help='读取并显示指定单元格的输出')
+    action_group.add_argument('--all', action='store_true', help='执行整个notebook')
+    action_group.add_argument('--cells', type=str, help='执行指定cell(支持批量执行)，格式: "0,1,2" 或 "1-5" 或 "0,2-4,6"，支持数字索引和cell ID混合，如 "1c29d688,4896f9ab"')
+    action_group.add_argument('--get', type=str, nargs='?', const='all', help='获取cell完整信息(内容+输出)，支持索引/ID/范围/混合格式')
+    action_group.add_argument('--status', nargs='*', 
+                             choices=['exec', 'structure', 'deps', 'errors', 'all'],
+                             help='显示状态信息: exec(执行), structure(结构), deps(依赖), errors(错误), all(全部)')
+    action_group.add_argument('--search', type=str, help='在所有cell内容和输出中搜索指定文本(支持正则表达式)')
     
-    parser.add_argument('--show-output', action='store_true', help='运行后在控制台显示输出结果')
-    parser.add_argument('--kernel', type=str, default='python3', help='指定kernel名称 (默认: python3)')
+    # 基础文件操作
+    action_group.add_argument('--create', action='store_true', help='创建全新的空白notebook文件')
+    
+    # 编辑功能
+    action_group.add_argument('--edit-cell', nargs=1, metavar='CELL_ID', help="编辑指定cell的内容，支持数字索引或cell ID，必须配合 --code-stdin 使用标准输入")
+    action_group.add_argument('--delete-cell', type=str, help='删除指定cell，支持数字索引或cell ID')
+    action_group.add_argument('--move-cell', nargs=2, metavar=('FROM', 'TO'), help='移动cell位置，支持数字索引或cell ID')
+    action_group.add_argument('--insert-cell', nargs='+', metavar=('POS', '[TYPE]'), help="插入新cell，必须配合 --code-stdin 使用标准输入")
+    action_group.add_argument('--copy-cell', nargs=2, metavar=('FROM', 'TO'), help='复制cell到指定位置，支持数字索引或cell ID')
+    action_group.add_argument('--convert-cell', nargs=2, metavar=('CELL_ID', 'TYPE'), help='转换cell类型，支持数字索引或cell ID')
+    action_group.add_argument('--clear-output', type=str, help='清空指定cell的输出，支持数字索引或cell ID')
+    
+    # 批量操作功能
+    action_group.add_argument('--batch-delete', type=str, help='批量删除cell，格式: "1,2,3" 或 "1-5"，支持cell ID')
+    action_group.add_argument('--batch-clear-outputs', type=str, help='批量清空输出，格式: "1,2,3" 或 "1-5"，支持cell ID')
+    action_group.add_argument('--batch-convert', nargs=2, metavar=('RANGE', 'TYPE'), help='批量转换cell类型，支持cell ID')
+    
+    # 文件操作功能
+    action_group.add_argument('--backup', nargs='?', const='', help='创建备份，可指定描述')
+    action_group.add_argument('--list-backups', action='store_true', help='列出所有备份')
+    action_group.add_argument('--restore-backup', type=str, help='恢复指定备份（使用备份ID）')
+    action_group.add_argument('--delete-backup', type=str, help='删除指定备份（使用备份ID）')
+    action_group.add_argument('--cleanup-backups', nargs='?', type=int, const=10, help='清理旧备份，保留最新N个（默认10个）')
+    action_group.add_argument('--backup-info', action='store_true', help='显示备份基本信息')
+    
+    # 图片管理功能
+    action_group.add_argument('--sync-images', action='store_true', help='强制全量同步图片状态（用于故障恢复）')
+    action_group.add_argument('--list-images', action='store_true', help='查看已保存的图片详情')
+    action_group.add_argument('--storage-info', action='store_true', help='显示存储统计信息')
+    
+    # 基础选项
+    parser.add_argument('--show-output', action='store_true', help='执行cell时在控制台显示输出结果（配合--all, --cells使用）')
+    parser.add_argument('--output-only', action='store_true', help='配合--get使用，仅获取输出信息，不显示源代码')
+    parser.add_argument('--code-stdin', action='store_true', help='从标准输入读取代码内容，配合--edit-cell或--insert-cell使用Here Document格式')
+    
+    # 通用选项
+    parser.add_argument('--dry-run', action='store_true', help='预览模式，不实际修改文件，适用于编辑和批量操作')
+    parser.add_argument('--case-sensitive', action='store_true', help='搜索时大小写敏感，配合--search使用')
     
     args = parser.parse_args()
     
-    if not os.path.exists(args.notebook_path):
-        print(f"错误: 文件 {args.notebook_path} 不存在")
-        sys.exit(1)
+    # 辅助函数：读取标准输入内容
+    def read_code_from_stdin():
+        """从标准输入读取代码内容，处理编码问题"""
+        try:
+            if sys.stdin.isatty():
+                print_error_and_exit("--code-stdin 需要通过管道传入代码内容")
+            
+            # 更强的编码处理，优先使用buffer.read()避免编码问题
+            content = None
+            
+            # 方法1: 尝试使用buffer读取（推荐方式）
+            if hasattr(sys.stdin, 'buffer'):
+                try:
+                    raw_content = sys.stdin.buffer.read()
+                    # 尝试UTF-8解码，失败则尝试其他编码
+                    try:
+                        content = raw_content.decode('utf-8')
+                    except UnicodeDecodeError:
+                        try:
+                            # Windows下尝试GBK编码
+                            content = raw_content.decode('gbk')
+                        except UnicodeDecodeError:
+                            # 最后使用errors='replace'处理
+                            content = raw_content.decode('utf-8', errors='replace')
+                except Exception as e:
+                    print(f"Warning: buffer读取失败: {e}")
+                    content = None
+            
+            # 方法2: 回退到普通读取
+            if content is None:
+                try:
+                    content = sys.stdin.read()
+                except UnicodeDecodeError as e:
+                    print_error_and_exit(f"输入内容编码错误: {e}\n提示: 请确保输入内容使用UTF-8或系统默认编码")
+            
+            if not content or not content.strip():
+                print_error_and_exit("从标准输入未读取到任何内容")
+                
+            return content.rstrip('\r\n')  # 移除末尾的换行符
+            
+        except Exception as e:
+            print_error_and_exit(f"读取标准输入失败: {e}")
     
+    # 验证--code-stdin的使用场景
+    if args.code_stdin:
+        if not (args.edit_cell or args.insert_cell):
+            print_error_and_exit("--code-stdin 只能配合 --edit-cell 或 --insert-cell 使用")
+    
+    # 验证edit-cell和insert-cell必须配合code-stdin使用
+    if args.edit_cell and not args.code_stdin:
+        print_error_and_exit("--edit-cell 必须配合 --code-stdin 使用\n标准用法: cat <<'EOF' | python nb_runner.py notebook.ipynb --edit-cell N --code-stdin")
+    
+    if args.insert_cell and not args.code_stdin:
+        print_error_and_exit("--insert-cell 必须配合 --code-stdin 使用\n标准用法: cat <<'EOF' | python nb_runner.py notebook.ipynb --insert-cell N [TYPE] --code-stdin")
+    
+    # 检查文件路径格式
     if not args.notebook_path.endswith('.ipynb'):
-        print(f"错误: 文件 {args.notebook_path} 不是有效的notebook文件 (.ipynb)")
-        sys.exit(1)
+        print_error_and_exit(f"文件路径 {args.notebook_path} 不是有效的notebook文件格式 (.ipynb)")
+    
+    # 处理创建新文件的情况
+    if args.create:
+        if os.path.exists(args.notebook_path):
+            print_error_and_exit(f"文件 {args.notebook_path} 已存在，无法创建")
+        create_blank_notebook(args.notebook_path)
+        print(f"✅ 成功创建空白notebook: {args.notebook_path}")
+        return
+    
+    # 对于非创建模式，检查文件是否存在
+    if not os.path.exists(args.notebook_path):
+        print_error_and_exit(f"文件 {args.notebook_path} 不存在\n提示: 使用 --create 参数创建新文件")
     
     try:
-        if args.list:
-            list_cells(args.notebook_path)
-        elif args.read_cell is not None:
-            read_cell_output(args.notebook_path, args.read_cell)
+        # 处理新增结构查询功能
+        if args.get is not None:
+            from core.notebook_analyzer import NotebookAnalyzer
+            analyzer = NotebookAnalyzer(args.notebook_path)
+            result = analyzer.get_cells_info(args.get, output_only=args.output_only)
+            print(result)
+            return
+        elif args.status is not None:
+            # 综合状态查询功能
+            if len(args.status) == 0:
+                # 默认显示执行状态
+                from core.notebook_analyzer import show_notebook_status
+                show_notebook_status(args.notebook_path)
+            else:
+                # 显示指定的状态信息
+                from core.notebook_analyzer import show_comprehensive_status
+                show_comprehensive_status(args.notebook_path, args.status)
+            return
+        elif args.search:
+            # 搜索功能
+            from core.notebook_analyzer import search_notebook
+            search_notebook(args.notebook_path, args.search, args.case_sensitive)
+            return
+        elif args.edit_cell:
+            cell_identifier = args.edit_cell[0]
+            content = read_code_from_stdin()
+            
+            if edit_cell_content(args.notebook_path, cell_identifier, content, args.dry_run):
+                print(f"✅ Cell [{cell_identifier}] 编辑完成")
+            return
+        elif args.delete_cell is not None:
+            if delete_cell(args.notebook_path, args.delete_cell, args.dry_run):
+                print(f"✅ Cell [{args.delete_cell}] 删除完成")
+            return
+        elif args.move_cell:
+            from_identifier, to_identifier = args.move_cell
+            if move_cell(args.notebook_path, from_identifier, to_identifier, args.dry_run):
+                print(f"✅ Cell 从 [{from_identifier}] 移动到 [{to_identifier}] 完成")
+            return
+        elif args.insert_cell:
+            # 验证插入位置参数
+            try:
+                pos = int(args.insert_cell[0])
+            except (ValueError, IndexError):
+                print_error_and_exit("插入位置必须是有效的数字")
+            
+            if pos < 0:
+                print_error_and_exit("插入位置不能为负数")
+            
+            cell_type = args.insert_cell[1] if len(args.insert_cell) > 1 else 'code'
+            
+            # 验证cell类型
+            if cell_type not in ['code', 'markdown', 'raw']:
+                print_error_and_exit(f"不支持的cell类型: {cell_type}，仅支持: code, markdown, raw")
+            
+            content = read_code_from_stdin()
+            
+            if insert_cell(args.notebook_path, pos, cell_type, content, args.dry_run):
+                print(f"✅ 在位置 [{pos}] 插入 {cell_type} Cell 完成")
+            return
+        elif args.copy_cell:
+            from_identifier, to_identifier = args.copy_cell
+            if copy_cell(args.notebook_path, from_identifier, to_identifier, args.dry_run):
+                print(f"✅ Cell 从 [{from_identifier}] 复制到 [{to_identifier}] 完成")
+            return
+        elif args.convert_cell:
+            cell_identifier, target_type = args.convert_cell[0], args.convert_cell[1]
+            if convert_cell_type(args.notebook_path, cell_identifier, target_type, args.dry_run):
+                print(f"✅ Cell [{cell_identifier}] 转换为 {target_type} 类型完成")
+            return
+        elif args.clear_output is not None:
+            if clear_cell_output(args.notebook_path, args.clear_output, args.dry_run):
+                print(f"✅ Cell [{args.clear_output}] 输出清空完成")
+            return
+        
+        # 处理批量操作功能
+        elif args.batch_delete:
+            if batch_delete_cells(args.notebook_path, args.batch_delete, args.dry_run):
+                print("✅ 批量删除操作完成")
+            return
+        elif args.batch_clear_outputs:
+            if batch_clear_outputs(args.notebook_path, args.batch_clear_outputs, args.dry_run):
+                print("✅ 批量清空输出操作完成")
+            return
+        elif args.batch_convert:
+            cell_range, target_type = args.batch_convert
+            if batch_convert_cells(args.notebook_path, cell_range, target_type, args.dry_run):
+                print("✅ 批量转换类型操作完成")
+            return
+        
+        # 处理备份管理功能
+        elif args.backup is not None:
+            description = args.backup if args.backup else None
+            backup_id = create_backup(args.notebook_path, description)
+            if backup_id:
+                print(f"✅ 备份创建完成: {backup_id}")
+            return
+        elif args.list_backups:
+            list_backups(args.notebook_path)
+            return
+        elif args.restore_backup:
+            if restore_backup(args.notebook_path, args.restore_backup, args.dry_run):
+                print("✅ 备份恢复完成")
+            return
+        elif args.delete_backup:
+            if delete_backup(args.notebook_path, args.delete_backup, args.dry_run):
+                print("✅ 备份删除完成")
+            return
+        elif args.cleanup_backups is not None:
+            deleted_ids = cleanup_old_backups(args.notebook_path, args.cleanup_backups, args.dry_run)
+            if deleted_ids:
+                print(f"✅ 清理完成，删除了 {len(deleted_ids)} 个旧备份")
+            return
+        elif args.backup_info:
+            show_backup_info(args.notebook_path)
+            return
+        
+        # 处理持久化存储功能
+        elif args.sync_images:
+            save_notebook_images(args.notebook_path)
+            return
+        elif args.list_images:
+            list_notebook_images(args.notebook_path)
+            return
+        elif args.storage_info:
+            # 显示存储统计信息
+            manager = ImageManager(args.notebook_path)
+            images_info = manager.list_images()
+            print(f"📊 存储统计:")
+            print(f"   图片cell数: {len(images_info)}")
+            
+            total_images = 0
+            for info in images_info:
+                total_images += len(info.get('images', []))
+            
+            print(f"   总图片数: {total_images}")
+            return
+        
+        # 默认执行模式
         elif args.all:
-            run_entire_notebook(args.notebook_path, args.kernel, args.show_output)
+            executor = NotebookExecutor(args.notebook_path)
+            result = executor.execute_all(args.show_output)
+            
+            if not args.show_output:
+                # 如果没有显示输出，则显示执行报告
+                formatted_result = format_execution_result(result)
+                print(formatted_result)
+            
+            if 'error' in result or result.get('error_count', 0) > 0:
+                sys.exit(1)
         elif args.cells:
-            cell_indices = [int(x.strip()) for x in args.cells.split(',')]
-            run_specific_cells(args.notebook_path, cell_indices, args.kernel, args.show_output)
-        elif args.range:
-            start, end = [int(x.strip()) for x in args.range.split('-')]
-            run_cell_range(args.notebook_path, start, end, args.kernel, args.show_output)
+            # 使用统一的cell标识符解析
+            from utils.helpers import parse_and_resolve_cells
+            executor = NotebookExecutor(args.notebook_path)
+            cell_indices = parse_and_resolve_cells(executor.notebook, args.cells)
+            
+            if not cell_indices:
+                print_error_and_exit("没有找到有效的cell")
+            
+            result = executor.execute_cells(cell_indices, args.show_output)
+            
+            if not args.show_output:
+                # 如果没有显示输出，则显示执行报告
+                formatted_result = format_execution_result(result)
+                print(formatted_result)
+            
+            if 'error' in result or result.get('error_count', 0) > 0:
+                sys.exit(1)
         else:
-            run_entire_notebook(args.notebook_path, args.kernel, args.show_output)
+            # 默认运行整个notebook
+            executor = NotebookExecutor(args.notebook_path)
+            result = executor.execute_all(args.show_output)
+            
+            if not args.show_output:
+                # 如果没有显示输出，则显示执行报告
+                formatted_result = format_execution_result(result)
+                print(formatted_result)
+            
+            if 'error' in result or result.get('error_count', 0) > 0:
+                sys.exit(1)
 
     except KeyboardInterrupt:
-        print("\\n操作被用户中断")
+        print("\n操作被用户中断")
         sys.exit(1)
     except Exception as e:
         print(f"发生未预期的错误: {str(e)}")

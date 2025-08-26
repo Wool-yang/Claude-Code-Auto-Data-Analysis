@@ -6,7 +6,7 @@ color: cyan
 ---
 
 角色目标
-- 读取 archives/{current_task_name}/data_source/descriptions/* 数据源描述文件（JSON格式结构化数据和MD格式非结构化数据）与 archives/{current_task_name}/docs/task_background.md
+- 读取 archives/{current_task_name}/data_source/descriptions/* 数据源描述文件（JSON格式结构化数据描述文件和*_summary.md格式非结构化数据摘要文件）与 archives/{current_task_name}/docs/task_background.md
 - 基于背景中的"分析目标/关键指标/预期结论"与数据源能力，生成 archives/{current_task_name}/docs/analysis_plans/*.json（遵循 CLAUDE.md 规划 Schema）
 - 为每个规划分配 plan_id（uuid）和 plan_slug（基于title生成），并指定 deliverables.notebook 名称
 
@@ -16,10 +16,7 @@ color: cyan
 输入
 - 数据源描述：archives/{current_task_name}/data_source/descriptions/*
   - **结构化数据**：读取JSON格式描述文件（*.json）
-  - **非结构化数据**：
-    * 优先读取摘要文件（{filename}_summary.md）- 包含所有分片的核心内容汇总
-    * 若无摘要文件且文件未分片：读取单个描述文件（{filename}.md）
-    * 若无摘要文件但文件已分片：需读取所有分片（{filename}_1.md, {filename}_2.md, ...）来获取完整信息
+  - **非结构化数据**：读取摘要文件（{filename}_summary.md）- DataSourceFileAnalysisAgent的最终产物
 - 任务背景：archives/{current_task_name}/docs/task_background.md（首选，从 task 背景读取 task_name、project_name、分析目标等；如果缺失，主协调器可通过对话询问用户）
 - 项目上下文：project_config/project_context.json（包含 current_task 与 tasks 字段）
 - 历史反馈（如果存在）：archives/{current_task_name}/docs/analysis_plans/validation/feedback_{plan_slug}_*.md（重新规划时必须参考，避免重复错误）
@@ -48,17 +45,18 @@ color: cyan
     * fields.core：核心字段列表（必须使用的字段）
     * fields.support：支撑字段列表（辅助分析的字段）
   - 非结构化数据：
-    * 从摘要文件提取关键信息填充到extracted_info，格式为：
+    * 从摘要文件（DataSourceFileAnalysisAgent的最终产物）提取关键信息填充到extracted_info，格式为：
       ```json
       {
         "核心指标": ["指标1", "指标2", ...],
         "关键发现": ["发现1", "发现2", ...],
         "重要数据": [{"名称": "数据1", "值": "xxx"}, ...],
         "业务规则": ["规则1", "规则2", ...],
-        "关键表格": [{"名称": "表格1", "说明": "xxx"}, ...]
+        "业务洞察": ["洞察1", "洞察2", ...]
       }
       ```
-    * content_areas：标注使用的内容区域，如["背景介绍", "数据分析", "结论建议"]
+    * content_areas：摘要文件的内容区域列表，如["文档概述", "关键数据与指标", "重要发现与结论", "业务洞察"]
+    * summary_file_path：摘要文件的相对路径，如"archives/{current_task_name}/data_source/descriptions/{filename}_summary.md"
 - **field_details**：字段详细信息（必须包含，因为AnalysisExecutionAgent不再读描述文件）
   - 每个重要字段都要有type、role、category、derivation说明
   - type：数据类型（如categorical、numeric、datetime、text等）

@@ -17,7 +17,7 @@ python tools/data_readers/read_structured_data.py \
   --files archives/{current_task_name}/data_source/raw/data.csv \
   --intermediate \
   --sample_rows 20
-# 输出 JSON 到 stdout，同时生成 intermediate_artifacts/{filename}_intermediate.json
+# 输出 JSON 到 stdout，不生成中间文件
 ```
 
 ### 3. 非结构化数据处理
@@ -246,15 +246,40 @@ python read_structured_data.py --files data.csv --sample_rows 10
 - **图片目录**：`{filename}_images/`
 - **相对路径**：确保图片引用正确
 
+#### 运行时间注意事项
+- **处理包含图片的文件时**：由于需要调用Google Gemini API分析图片内容，运行时间可能延长
+- **推荐超时设置**：对于包含多张图片的文件，建议设置5分钟超时
+- **网络依赖**：图片描述功能需要网络连接访问AI服务
+
 ### 使用方法
 
 ```bash
-# 处理单个文件
+# 处理单个文件（正常模式，简洁输出）
 python document_parser.py /path/to/document.docx
+
+# 启用调试模式（详细输出）
+python document_parser.py /path/to/document.docx --debug
 
 # 批量处理
 python document_parser.py /path/to/file1.xlsx /path/to/file2.md
 ```
+
+### 运行模式
+
+#### 正常模式（默认）
+- 输出简洁明了，只显示关键信息
+- 适用于生产环境和DataSourceFileAnalysisAgent调用
+- 示例输出：
+```
+Intermediate artifact saved to: descriptions\intermediate_artifacts\document_intermediate.md
+Intermediate artifact generation completed.
+```
+
+#### 调试模式（--debug）
+- 输出详细的处理信息和调试数据
+- 适用于开发调试和故障排除
+- 包含坐标映射、图片处理详情等技术信息
+- 启用方式：添加 `--debug` 参数
 
 ### 输出结构
 

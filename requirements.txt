@@ -1,2 +1,14 @@
-playwright==1.54.0
+# Core data processing dependencies
 pyyaml>=6.0
+google-genai>=0.1.0
+chardet>=5.0.0
+charset-normalizer>=3.0.0
+ftfy>=6.0.0
+pandas>=1.5.0
+pymupdf>=1.26.0
+openpyxl>=3.0.0
+xlrd>=2.0.0
+
+# Jupyter notebook dependencies  
+nbformat>=5.0.0
+jupyter-client>=7.0.0

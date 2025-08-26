@@ -3,6 +3,30 @@ import zipfile
 import argparse
 import json
 from pathlib import Path
+import fitz  # pymupdf
+
+def has_images_in_pdf(file_path):
+    """检查PDF文件是否包含图片"""
+    try:
+        doc = fitz.open(file_path)
+        total_images = 0
+        
+        for page_num in range(doc.page_count):
+            page = doc[page_num]
+            images = page.get_images()
+            total_images += len(images)
+            
+            # 如果发现图片，立即返回True
+            if total_images > 0:
+                doc.close()
+                return True
+        
+        doc.close()
+        return False
+        
+    except Exception:
+        # 出错时保守地返回False
+        return False
 
 def has_images_in_excel(file_path):
     """检查Excel文件是否包含图片"""
@@ -56,9 +80,16 @@ def classify_file(file_path):
     if ext in ['.md', '.markdown', '.doc', '.docx', '.pdf', '.txt']:
         if ext in ['.docx']:
             result["has_images"] = has_images_in_docx(file_path)
+        elif ext == '.pdf':
+            result["has_images"] = has_images_in_pdf(file_path)
+            # 如果PDF包含图片，则作为非结构化处理
+            # 如果PDF不包含图片，仍然作为非结构化处理（因为PDF本质是文档）
+            result["classification"] = "unstructured"
+            result["reason"] = "PDF文档文件" + ("，包含图片" if result["has_images"] else "，纯文本")
+            result["recommended_script"] = "document_parser.py"
         
         # TXT文件需要进一步判断是否为分隔符数据文件
-        if ext == '.txt':
+        elif ext == '.txt':
             try:
                 # 简单检查前几行是否像分隔符文件
                 with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:

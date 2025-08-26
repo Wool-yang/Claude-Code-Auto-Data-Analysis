@@ -108,6 +108,11 @@ ENV/
 env.bak/
 venv.bak/
 
+# API Keys and Secrets
+config/config.json
+.gemini_api_key
+*_api_key*
+
 # Spyder project settings
 .spyderproject
 .spyproject

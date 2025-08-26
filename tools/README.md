@@ -46,8 +46,11 @@ python tools/data_readers/read_structured_data.py --files data.csv --intermediat
 # 1. 分类文件
 python tools/data_readers/file_classifier.py document.docx
 
-# 2. 生成中间产物
+# 2. 生成中间产物（正常模式）
 python tools/data_readers/document_parser.py document.docx
+
+# 2. 生成中间产物（调试模式）
+python tools/data_readers/document_parser.py document.docx --debug
 
 # 3. 检查大小并分割（如需要）
 python tools/data_readers/file_splitter.py intermediate.md -s 20 --delete-original
@@ -77,6 +80,7 @@ python tools/data_readers/frontmatter_tool.py single intermediate.md \
   - 处理 Markdown、Word、复杂 Excel 等文档类型
   - 支持图片提取和图文混排处理
   - 生成 Markdown 格式中间产物
+  - 支持调试模式（`--debug`）用于故障诊断
 
 - **file_splitter.py**: 文件分割工具
   - 智能分割超过 20KB 的 Markdown 文件
@@ -92,32 +96,53 @@ python tools/data_readers/frontmatter_tool.py single intermediate.md \
 
 ### notebook_runners
 
-Jupyter Notebook 运行和管理工具：
+专为 AnalysisExecutionAgent 优化的 Notebook 执行工具：
 
-- **nb_runner.py**: Notebook 运行脚本
-  - 支持运行整个 Notebook、特定单元格或单元格范围
-  - 提供执行结果验证和错误处理
+- **nb_runner.py**: 完整的 Notebook 操作平台
+  - **Agent 优化**: 移除调试警告，分层帮助文档，增强 AST 解析
+  - **灵活执行**: 支持原样执行和智能执行两种模式
+  - **完整操作**: 结构分析、内容搜索、编辑操作、批量处理、备份管理
+  - **安全机制**: 预览模式、版本管理、错误恢复
 
-#### 使用示例
+#### 执行模式设计
 
-AnalysisExecutionAgent 通过 Bash 工具调用脚本执行 Notebook：
+**两种执行策略，满足不同需求**：
+
+- **`--all`**: 按原始顺序执行整个 Notebook
+  - 保持 Notebook 原有的逻辑顺序
+  - 适用于完整运行和问题重现
+  - 每次启动新 kernel，确保环境一致性
+
+- **`--cells`**: 按依赖关系智能执行指定 Cell
+  - 自动分析变量依赖，确定最优执行顺序
+  - 支持数字索引和 cell ID 混合使用
+  - 适用于部分执行和调试验证
+
+#### Agent 标准工作流
 
 ```bash
-# 运行整个 Notebook
-python tools/notebook_runners/nb_runner.py "D:\Program\jupyter\{project_name}\{current_task_name}\analysis.ipynb" --all
+# 逐步执行验证（智能依赖排序）
+python tools/notebook_runners/nb_runner.py notebook.ipynb --cells "0,1,2,3" --show-output
 
-# 运行特定单元格（如第 0, 2, 4 个单元格）
-python tools/notebook_runners/nb_runner.py notebook.ipynb --cells "0,2,4"
+# 检查整体执行状态
+python tools/notebook_runners/nb_runner.py notebook.ipynb --status
 
-# 运行单元格范围（如第 1-3 个单元格）
-python tools/notebook_runners/nb_runner.py notebook.ipynb --range "1-3"
+# 获取特定 Cell 详细信息
+python tools/notebook_runners/nb_runner.py notebook.ipynb --get 3
 
-# 列出所有单元格信息
-python tools/notebook_runners/nb_runner.py notebook.ipynb --list
-
-# 读取特定单元格的输出
-python tools/notebook_runners/nb_runner.py notebook.ipynb --read-cell "2"
+# 完整执行（按原始顺序）
+python tools/notebook_runners/nb_runner.py notebook.ipynb --all --show-output
 ```
+
+#### 核心特性
+
+- **双模式执行**: 原样执行保持逻辑，智能执行优化依赖
+- **依赖检测**: 增强 AST 解析，支持复杂变量依赖关系
+- **信息查询**: 宏观状态监控（--status）和微观信息获取（--get）
+- **完整编辑**: 编辑、删除、移动、插入、复制、转换 Cell
+- **批量操作**: 批量删除、转换、清空、执行多个 Cell  
+- **备份管理**: 时间戳版本管理，安全恢复机制
+- **预览模式**: 所有编辑操作支持 --dry-run 安全预览
 
 详细使用方法请参考 `notebook_runners/README_nb_runner.md`
 
@@ -148,3 +173,4 @@ Notebook 环境初始化工具：
 3. **路径兼容**: 使用 `os.path.normpath()` 确保 Windows 路径兼容性
 4. **中间产物**: 统一保存在 `intermediate_artifacts` 目录下
 5. **文档维护**: 每个工具目录都包含详细的 README 说明文档
+6. **调试支持**: 关键脚本支持调试模式，便于开发调试和故障排除

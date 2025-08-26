@@ -208,6 +208,26 @@ def split_file(input_file, output_dir=None, max_size_kb=20, keep_original=True):
         if frontmatter:
             # 复制原始frontmatter
             split_frontmatter = frontmatter.copy()
+            
+            # 优化图片元数据处理：只在第一个分片保留完整的图片列表
+            if i == 1:
+                # 第一个分片保留完整的图片列表
+                pass  # 保持原有的extracted_images或images_extracted
+            else:
+                # 其他分片简化图片信息
+                # 处理两种可能的字段名
+                if 'extracted_images' in split_frontmatter:
+                    # 记录图片数量但移除详细列表
+                    images_count = len(split_frontmatter['extracted_images'])
+                    del split_frontmatter['extracted_images']
+                    split_frontmatter['images_reference'] = f"参见{base_name}_1.md的extracted_images"
+                    if 'images_count' not in split_frontmatter:
+                        split_frontmatter['images_count'] = images_count
+                elif 'images_extracted' in split_frontmatter:
+                    # 处理document_parser.py生成的字段名
+                    del split_frontmatter['images_extracted']
+                    split_frontmatter['images_reference'] = f"参见{base_name}_1.md的images_extracted"
+            
             # 添加分片特有字段
             split_frontmatter['is_split'] = True
             split_frontmatter['part_number'] = i

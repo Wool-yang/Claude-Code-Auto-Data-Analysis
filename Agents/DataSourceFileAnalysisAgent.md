@@ -8,7 +8,7 @@ color: orange
 角色目标
 - 扫描 archives/{current_task_name}/data_source/raw/ 下的所有原始数据文件，按 CLAUDE.md 的描述文件 Schema 生成对应的描述文件
 - 结构化数据：生成JSON格式描述文件到 archives/{current_task_name}/data_source/descriptions/*.json
-- 非结构化数据：生成增强版Markdown格式描述文件到 archives/{current_task_name}/data_source/descriptions/*.md，保留所有原始内容的上下文信息
+- 非结构化数据：调用NonstructuredSummaryAgent子代理处理，生成摘要文件（*_summary.md）到 archives/{current_task_name}/data_source/descriptions/，控制在20KB以内，作为最重要的最终产物
 - 为每个源分配自增的 source_id，从 1 开始连续编号
 - 提取结构信息、元数据、抽样示例，并写入描述文件；更新 project_context.json 进度
 
@@ -21,17 +21,20 @@ color: orange
 - 可选参考: archives/{current_task_name}/docs/task_background.md（用于补充 tags/描述语境）
 
 输出
-- 结构化数据描述文件: archives/{current_task_name}/data_source/descriptions/{原文件同名}.json（遵循 CLAUDE.md 提供的结构化数据 JSON Schema）
-- 非结构化数据描述文件: archives/{current_task_name}/data_source/descriptions/{原文件同名}.md（增强版Markdown格式，包含完整原始内容和YAML frontmatter元数据）
-- **非结构化数据摘要文件**: archives/{current_task_name}/data_source/descriptions/{原文件同名}_summary.md（当描述文件>10KB或被分片时生成，包含核心内容的自然语言摘要）
+- **结构化数据描述文件**: archives/{current_task_name}/data_source/descriptions/{原文件同名}.json（遵循 CLAUDE.md 提供的结构化数据 JSON Schema）
+- **非结构化数据摘要文件**: archives/{current_task_name}/data_source/descriptions/{原文件同名}_summary.md（所有非结构化文件都生成摘要文件，作为最重要的最终产物，控制在20KB以内）
 - 任务完成报告: 向主协调器报告统计信息（如：总文件数、处理成功数、失败数、错误详情等）
 - 日志: archives/{current_task_name}/logs/data_analysis/{yyyyMMdd_HHmmss}.log
+
+处理过程中的中间产物（不是最终输出）：
+- 非结构化数据中间产物: archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.md
+- 分片文件（如需要）: archives/{current_task_name}/data_source/descriptions/{原文件同名}_1.md, {原文件同名}_2.md...（大文件分割后的处理过程文件）
 
 关键职责
 - 文件类型识别：csv、xlsx、xls、markdown、doc、other
 - 结构化数据处理：读取表头、推断列类型、均匀抽样几十行、统计行列数，生成JSON描述文件
-- 非结构化数据处理：全文读取（规模可控），提取标题/段落/列表/表格等结构化线索，生成增强版Markdown描述文件保留完整上下文
-- **摘要文件生成**：对>10KB的非结构化描述文件或分片文件，生成MD格式摘要文件，用自然语言总结最核心的内容、关键数据、重要结论
+- 非结构化数据处理：调用NonstructuredSummaryAgent处理，生成摘要文件作为最重要的最终产物，保留核心信息和业务洞察
+- **摘要文件生成**：所有非结构化文件都生成摘要文件（作为最重要的最终产物），通过调用NonstructuredSummaryAgent实现，摘要控制在20KB以内
 - 元数据提取：编码、分隔符、是否有表头、文件大小
 - tags 生成：结合文件名、目录、背景关键词进行简单标注
 - 并发处理：可并行分析多个文件，保证线程安全的 source_id 分配与进度更新，但须等待所有文件完成后才进入下一阶段
@@ -39,7 +42,7 @@ color: orange
 **必须使用的工具脚本**（禁止手动实现相同功能）：
 - `tools/data_readers/file_classifier.py` - 文件类型分类
 - `tools/data_readers/read_structured_data.py` - 结构化数据处理
-- `tools/data_readers/document_parser.py` - 非结构化数据处理
+- `tools/data_readers/document_parser.py` - 非结构化数据处理（**注意：包含图片的文件处理时间可能延长至5分钟**）
 - `tools/data_readers/file_splitter.py` - 大文件分割
 - `tools/data_readers/frontmatter_tool.py` - Frontmatter处理
 
@@ -65,85 +68,57 @@ color: orange
    
    **阶段2：生成中间产物**
    - 结构化数据：调用 `tools/data_readers/read_structured_data.py --intermediate` 
-     - 输出：JSON格式中间分析结果到 `archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.json`
-     - 包含：数据结构分析、类型推断、采样数据、解析元数据
-   - 非结构化数据：调用 `tools/data_readers/document_parser.py`
+     - 输出：JSON格式中间分析结果输出到**标准输出stdout**（不生成文件）
+     - 包含：数据结构分析、类型推断、采样数据、解析元数据、extraction_method字段
+   - 非结构化数据：调用 `tools/data_readers/document_parser.py`（**5分钟超时**）
      - 输出：Markdown格式中间产物到 `archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.md` 
-     - 包含：全文内容、提取的图片、表格转换、结构化线索
+     - 包含：全文内容、提取的图片、表格转换、结构化线索、extraction_method字段
      - 图片：提取到 `archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_images/` 目录
+     - **图片处理**：AI可用时使用Gemini API生成中文描述替换图片，AI不可用时保持传统markdown图片格式
    
    **阶段3：融合分析与标准化**
-   - 读取中间产物文件（JSON或Markdown）
-   - 结合 `task_background.md` 生成 description 和 tags
    - 分配递增的 source_id（从1开始）
-   - 根据数据类型生成对应格式的描述文件：
-     - **结构化数据**：构建符合 CLAUDE.md Schema 的JSON描述文件，写入 `archives/{current_task_name}/data_source/descriptions/{filename}.json`
+   - 根据数据类型处理：
+     - **结构化数据**：
+       1. 解析脚本标准输出的JSON数据（不读取文件）
+       2. 结合 `task_background.md` 生成 description 和 tags
+       3. 构建符合 CLAUDE.md Schema 的JSON描述文件
+       4. 写入 `archives/{current_task_name}/data_source/descriptions/{filename}.json`
      - **非结构化数据**：
-       1. **重要：禁止直接读取中间产物文件内容**
-          - 不要使用 Read 工具读取 `intermediate_artifacts/{filename}_intermediate.md`
-          - 原因：文件可能超过20KB，直接读取会占用大量上下文
-       2. 先检查中间产物文件大小：
-          - 使用 `ls -lh` 或 Python `os.path.getsize()` 获取文件大小
-          - 不要读取文件内容来判断大小
-       3. 如果文件 > 20KB：
-          - 直接调用文件分割工具进行分割（不读取原文件）
-          - 命令：`python tools/data_readers/file_splitter.py archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.md -o archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/ -s 20 --delete-original`
-          - 生成多个子文件：`archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate_1.md`, `{filename}_intermediate_2.md`...
-          - 分割工具会自动处理frontmatter和内容分割
-       4. 如果文件 ≤ 20KB：
-          - 直接复制文件到最终位置
-          - 使用文件操作工具（如 cp 命令）而非读取内容
-       5. 对每个最终文件添加或更新frontmatter：
-          - 使用 `tools/data_readers/frontmatter_tool.py` 更新文件的 frontmatter
-          - 示例：`python frontmatter_tool.py single file.md --frontmatter '{"source_id": "1", "description": "...", "tags": ["..."]}' --merge update`
-          - 工具会流式处理文件，不会一次性读取整个文件到内存
-          - 采用 'update' 合并策略，智能合并已有的 frontmatter（如来自分割工具）
-          - frontmatter包含完整的元数据字段
-          - 分片文件额外包含：is_split、part_number、total_parts、parent_file
-   
-   **阶段4：生成摘要文件（仅非结构化数据）**
-   - 检查非结构化数据描述文件大小和分片情况
-   - 如果文件>10KB或存在分片：
-     1. **对于未分片文件（>10KB）**：
-        - 读取单个描述文件
-        - 提取核心内容：关键数据点、重要表格、主要结论、核心指标
-        - 生成自然语言摘要，控制在3-5KB
-        - 写入 `{filename}_summary.md`
-     2. **对于分片文件**：
-        - 初始化空摘要文件 `{filename}_summary.md`
-        - 逐个读取各分片（`{filename}_1.md`, `{filename}_2.md`...）
-        - 每读取一个分片后：
-          * 提取该分片的核心内容
-          * 将新内容智能合并到现有摘要中
-          * 避免重复，保持逻辑连贯
-          * 更新摘要文件
-        - 最终摘要包含所有分片的精华内容
-     3. **摘要文件格式**：
-        ```markdown
-        # {原文件名} 核心内容摘要
-        
-        ## 文档概述
-        [简要描述文档类型、用途、时间范围等]
-        
-        ## 关键数据与指标
-        - [核心数据点1]
-        - [核心数据点2]
-        
-        ## 重要发现与结论
-        [主要发现和结论的自然语言描述]
-        
-        ## 关键表格与图表说明
-        [重要表格的简化版本或说明]
-        
-        ## 业务洞察
-        [对分析有价值的业务信息]
-        ```
+       1. **委派NonstructuredSummaryAgent处理中间产物**
+          - 说明：document_parser已生成中间产物文件，现在需要处理这些中间产物
+          - 处理内容：
+            * filename: {filename}
+            * source_id: {source_id} 
+            * current_task_name: {current_task_name}
+            * intermediate_path: archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.md
+          - 期望完成的任务：
+            1. 检查中间产物文件大小（使用Python命令，不读取内容）
+            2. 如果≤20KB，中间产物已有基础frontmatter，保留在intermediate_artifacts目录
+            3. 如果>20KB，分割文件到intermediate_artifacts目录（file_splitter会保留并增强中间产物的frontmatter）
+            4. 生成摘要文件（{filename}_summary.md）作为最终产物，需要：
+               - 分析文件内容，生成以下关键字段：
+                 * description: 基于内容理解生成的中文描述
+                 * tags: 基于内容和背景信息提取的关键词
+                 * extracted_info: 从内容中提取的结构化关键信息（核心指标、关键发现、重要数据、业务规则、业务洞察）
+                 * content_areas: 定义摘要的内容区域结构
+               - 添加管理字段：source_id、is_summary、total_parts、intermediate_files
+               - 编写标准化的摘要正文，控制在20KB以内
+            5. 摘要文件的intermediate_files字段应列出所有中间产物文件（相对路径）
+            6. 返回处理结果统计
+            
+          - 路径说明：
+            * 中间产物保存位置：archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/
+            * 摘要文件保存位置：archives/{current_task_name}/data_source/descriptions/
+            * intermediate_files字段格式：["intermediate_artifacts/filename_intermediate.md"] 或 ["intermediate_artifacts/filename_1.md", "intermediate_artifacts/filename_2.md", ...]
+            
+       2. **接收处理结果并更新统计**
 
 4. 全部完成后，生成任务完成报告并提交给主协调器（包含：总文件数、成功处理数、失败数、错误摘要等）
 
 文件与字段约定
 - **结构化数据描述文件**字段严格遵循 CLAUDE.md 的 JSON Schema：
-  - source_id: 自增数字字符串（"1","2",...）
+  - source_id: 自增数字（1, 2, 3...）
   - file_name: 原文件名（不含路径）
   - file_type: {csv,xlsx,xls}
   - is_structured: true
@@ -151,24 +126,44 @@ color: orange
   - description: 简要中文描述（基于内容与背景关键词）
   - structure: {row_count, column_count, columns:[{name,type,sample_values}]}
   - metadata: {encoding, delimiter, has_header}
-  - intermediate_artifacts: {has_intermediate_file, intermediate_file_path, has_images, images_directory, processing_method}
+  - intermediate_artifacts: {intermediate_file_path, images_count, images_directory}
+  - extraction_method: "read_structured_data"
   - tags: 关键词数组（智能生成）
 
-- **非结构化数据描述文件**采用增强版Markdown格式：
-  - YAML frontmatter包含所有元数据字段
-  - 正文包含完整的原始文档内容
-  - 保留所有表格、列表、图片等结构化信息
-  - 文件扩展名为.md
+- **非结构化数据摘要文件**采用Markdown格式，包含完整的YAML frontmatter：
+  - source_id: 自增数字（1, 2, 3...）
+  - file_name: 原文件名（不含路径）
+  - file_type: {markdown, doc, docx, pdf, txt, other}
+  - is_structured: false
+  - size: 字节数（原始文件大小）
+  - description: 简要中文描述（基于内容与背景关键词）
+  - tags: 关键词数组（智能生成）
+  - is_summary: true（标识这是摘要文件）
+  - total_parts: 分片数（1表示未分片，>1表示分片数）
+  - intermediate_files: 中间产物文件路径列表（相对路径）
+  - content_areas: 摘要文件内容区域列表["文档概述", "关键数据与指标", "重要发现与结论", "业务洞察"]
+  - extracted_info: 关键信息提取（字典格式，包含核心指标、关键发现、重要数据、业务规则、业务洞察等）
+  - 正文: 标准章节结构的摘要内容
 
-- 中间产物管理：
-  - 结构化数据中间产物：`archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.json`
-  - 非结构化数据中间产物：`archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.md`
-  - 图片提取目录：`archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_images/`（如果有图片）
-  - 中间产物相对路径记录在 intermediate_artifacts 字段中
+**文件处理产物分类**：
+
+**1. 最终输出产物**（后续Agent直接使用）：
+- **结构化数据**：JSON格式描述文件（{filename}.json）
+- **非结构化数据**：摘要文件（{filename}_summary.md），控制在20KB以内，包含文档概述、关键数据、重要发现、业务洞察等精炼信息
+
+**2. 中间处理文件**（处理过程中生成，不是最终产物）：
+- **原始中间产物**：`archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_intermediate.md`（document_parser.py的直接输出）
+- **分片文件**：`archives/{current_task_name}/data_source/descriptions/{filename}_1.md`, `{filename}_2.md`...（当中间产物>20KB时进行分割，用于增量生成摘要）
+- **图片提取**：`archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/{filename}_images/`（如果原文件包含图片）
+- **路径记录**：所有中间产物路径记录在最终描述文件的 `intermediate_artifacts` 字段中
 
 并发与性能
 - 允许并行文件分析；默认并发度=CPU 核数或配置值
 - 采样与类型推断在内存与时间受限情况下执行，避免全量加载超大文件
+- **运行时间注意事项**：
+  - 处理包含图片的非结构化文件时，由于需要调用Google Gemini API分析图片内容，运行时间将显著延长
+  - **推荐超时设置**：对于包含多张图片的Excel/Word文件，建议设置5分钟超时
+  - **网络依赖**：图片描述功能需要网络连接访问AI服务，如遇网络问题会回退到基于文件名的智能描述
 
 错误处理与重试
 - 单文件失败：记录错误到日志，跳过该文件，继续其他任务
@@ -181,10 +176,10 @@ color: orange
 与其他 Agent 交互
 - 为 AnalysisIdeaPlanningAgent 提供标准化描述文件作为输入：
   - 结构化数据：提供 JSON 格式描述文件（archives/{current_task_name}/data_source/descriptions/*.json）
-  - 非结构化数据：提供增强版 Markdown 格式描述文件（archives/{current_task_name}/data_source/descriptions/*.md）
+  - 非结构化数据：提供摘要文件（archives/{current_task_name}/data_source/descriptions/*_summary.md）作为最终产物
 - 后续Agent读取规则：
   - 结构化数据：Agent读取JSON描述文件进行规划设计，AnalysisExecutionAgent执行时仍需访问原始文件
-  - 非结构化数据：所有Agent只读取MD描述文件，不再访问原始文件
+  - 非结构化数据：所有Agent优先读取摘要文件（*_summary.md），这是重要的最终产物，当发现明显缺乏信息时，读取content_areas所指示摘要文件的特定章节内容来补充上下文
 
 安全与合规
 - 不写入原文敏感数据到日志；sample_values 仅保留最小必要示例

@@ -17,8 +17,8 @@ color: green
 - 规划文件：archives/{current_task_name}/docs/analysis_plans/*.json
 - 背景文件：archives/{current_task_name}/docs/task_background.md
 - 数据源描述：
-  - 结构化数据：archives/{current_task_name}/data_source/descriptions/*.json
-  - 非结构化数据：优先读取摘要文件 {filename}_summary.md，若无则读取描述文件 {filename}.md 或分片文件 {filename}_1.md, {filename}_2.md 等
+  - 结构化数据：数据描述文件 archives/{current_task_name}/data_source/descriptions/*.json
+  - 非结构化数据：摘要文件 archives/{current_task_name}/data_source/descriptions/*_summary.md
 - 上下文：project_config/project_context.json（包含 current_task_name 与 tasks 字段）
 
 输出

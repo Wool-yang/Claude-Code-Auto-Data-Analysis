@@ -260,6 +260,25 @@ def gather_hard_info(file_path, read_result, sample_n, uniform_sampling=True):
         sample_rows = df.head(sample_n).to_dict(orient='records')
         sampling_method = 'head'
     
+    # 处理sample_rows中的非JSON序列化对象
+    def convert_for_json(obj):
+        if pd.isna(obj) or obj is None:
+            return None
+        elif hasattr(obj, 'isoformat'):  # datetime objects
+            return obj.isoformat()
+        elif hasattr(obj, 'item'):  # numpy scalars
+            return obj.item()
+        elif not isinstance(obj, (int, float, bool, str, list, dict)):
+            return str(obj)
+        else:
+            return obj
+    
+    # 转换sample_rows中的所有值
+    sample_rows = [
+        {k: convert_for_json(v) for k, v in row.items()}
+        for row in sample_rows
+    ]
+    
     info = {
         'file_name': p.name,
         'file_type': p.suffix.lstrip('.'),
@@ -330,7 +349,11 @@ def main():
                         col_type = 'boolean'
                     else:
                         try:
-                            pd.to_datetime(ser.dropna(), errors='raise')
+                            # 尝试推断日期格式，抑制警告
+                            import warnings
+                            with warnings.catch_warnings():
+                                warnings.simplefilter("ignore")
+                                pd.to_datetime(ser.dropna(), errors='raise', infer_datetime_format=True)
                             col_type = 'datetime'
                         except Exception:
                             nunique = ser.nunique(dropna=True)
@@ -341,7 +364,18 @@ def main():
                 except Exception:
                     col_type = 'unknown'
                 try:
-                    sample_vals = ser.head(5).where(pd.notnull(ser.head(5)), None).tolist()
+                    raw_values = ser.head(5).where(pd.notnull(ser.head(5)), None).tolist()
+                    # 处理pandas对象，确保JSON序列化兼容
+                    sample_vals = []
+                    for val in raw_values:
+                        if pd.isna(val) or val is None:
+                            sample_vals.append(None)
+                        elif hasattr(val, 'isoformat'):  # datetime objects
+                            sample_vals.append(val.isoformat())
+                        elif hasattr(val, 'item'):  # numpy scalars
+                            sample_vals.append(val.item())
+                        else:
+                            sample_vals.append(str(val) if not isinstance(val, (int, float, bool, str)) else val)
                 except Exception:
                     sample_vals = []
                 columns_meta.append({'name': col, 'type': col_type, 'sample_values': sample_vals})
@@ -374,6 +408,7 @@ def main():
                 'sample_count': len(info.get('sample_rows', [])),
                 'sampling_method': info.get('sampling_method', 'uniform')  # 记录抽样方式
             },
+            'extraction_method': 'read_structured_data',
             'processing_notes': {
                 'ftfy_fixed_columns': info.get('ftfy_fixed_columns', []),
                 'recovered_columns': info.get('recovered_columns', [])
