@@ -345,20 +345,82 @@ NotebookExecutorAgent 提供多层次自动修复：
 
 ## 🚀 更新历史
 
-### 最新版本（refactor/merge-subagents-into-main 分支）
+Multi-Agent架构在Claude Code环境中的演进过程，从理想化设计向工程化实践的转变。
 
-**架构重构**（2025-08）：
-- 将 Agent 文件从 `.claude/agents/` 迁移到 `Agents/` 目录
-- 明确区分主 Agent 和 Sub-Agent 的职责边界
-- 新增 notebook_config 工具，提供标准化环境初始化
-- 完善 nb_runner 模块化架构（core/ 和 utils/ 目录）
-- 强化工具使用规范，确保 Agent 严格使用项目工具
+### 🔄 架构演进三阶段
 
-**功能增强**：
-- 实现全字段利用策略，提高数据分析覆盖率
-- 增强非结构化数据处理能力，支持大文件智能分割
-- 完善 Agent 间通信协议，使用 JSON 和 Here Document 格式
-- 加强质量保障机制，包含代码修复和图表验证
+#### 第一阶段：全Sub-Agent架构 (Main分支, 2025-08-11)
+
+**设计模式**：完全解耦的Agent协作模式
+- **Agent配置**：所有5个核心Agent位于 `.claude/agents/` 目录
+  - DataSourceFileAnalysisAgent、AnalysisIdeaPlanningAgent、IdeaValidationAgent
+  - AnalysisExecutionAgent、ResultValidationAgent
+- **交互方式**：主协调器通过Task工具调用各个Sub-Agent
+- **架构特点**：每个Agent都是独立的Sub-Agent实体
+
+**技术约束**：
+- **上下文限制**：Sub-Agent有效上下文约100k，处理复杂任务时效果下降
+- **介入限制**：无法在Agent执行过程中进行人工调整
+- **代码质量**：受Sub-Agent上下文容量限制，影响代码生成质量
+
+#### 第二阶段：目录重组过渡期 (30b7d22, 2025-08-13)
+
+**变更内容**：Agent文件迁移 `.claude/agents/` → `Agents/`
+- **目录重组**：将所有Agent实现文档迁移到顶级目录
+- **角色重新思考**：开始区分主Agent与Sub-Agent的不同定位
+- **架构准备**：为混合架构转型提供基础
+
+#### 第三阶段：混合架构重构 (refactor/merge-subagents-into-main, 2025-08-26)
+
+**架构调整**：上下文工程优化实践
+
+**混合架构设计**：
+- **主Agent直接扮演**：主协调器直接扮演DataSourceFileAnalysisAgent、AnalysisIdeaPlanningAgent、IdeaValidationAgent、AnalysisExecutionAgent、ResultValidationAgent角色
+  - 获得完整上下文容量
+  - 支持人工介入和质量控制
+  - 专注于代码生成和分析逻辑
+- **保留工具型Sub-Agent** (`.claude/agents/`)：
+  - **NotebookExecutorAgent**：处理notebook文件技术操作，减少主流程上下文占用
+  - **NonstructuredSummaryAgent**：处理大文件分割和摘要生成
+
+**改进效果**：
+- **代码生成**：主流程不受Sub-Agent限制，可生成更复杂的分析代码
+- **灵活性**：支持人工介入调整
+- **上下文管理**：通过Sub-Agent处理特定工具操作，主流程专注核心分析
+- **实用性**：在自动化程度与代码质量之间达到平衡
+
+### 📊 架构对比
+
+| 维度 | 全Sub-Agent架构 | 混合架构 |
+|------|----------------|------------|
+| **上下文容量** | 受限于~100k | 主流程无限制 |
+| **代码生成质量** | 受Sub-Agent限制 | 有所提升 |
+| **人工介入能力** | 困难 | 支持 |
+| **系统复杂度** | 高度解耦但刚性 | 适度耦合且灵活 |
+
+### 🎯 设计思路
+
+**从"完全解耦"到"实用平衡"**：从纯理论的Agent解耦转向实用性与质量的平衡。
+
+**上下文工程**：将上下文容量作为约束条件，通过架构设计进行优化。
+
+**Agent分类**：区分工具操作型Agent（适合Sub-Agent）与分析逻辑型Agent（适合主流程）。
+
+### 🔮 未来展望
+
+随着AI模型能力的持续发展，系统架构将继续优化：
+
+**模型能力提升**：
+- **更大上下文窗口**：未来模型上下文容量增加后，Sub-Agent的限制将逐步缓解
+- **更强召回能力**：模型对复杂信息的理解和召回能力增强，将改善Agent协作效果
+- **架构灵活性**：可根据模型能力动态调整主Agent与Sub-Agent的职责分工
+
+**系统优化方向**：
+- Sub-Agent在大上下文模型下的表现改善
+- Agent协作模式的进一步优化
+- 人工介入与自动化程度的动态平衡
+
+这一架构演进为Claude Code环境下的Multi-Agent系统设计提供了实践参考。
 
 ## 📝 配置说明
 
@@ -408,12 +470,19 @@ NotebookExecutorAgent 提供多层次自动修复：
 
 ## 🏷️ 项目状态
 
-- **当前分支**：refactor/merge-subagents-into-main
-- **开发阶段**：架构重构与功能完善
-- **核心功能**：Multi-Agent 协作、数据处理、Notebook 生成已完整实现
-- **下一步计划**：测试验证、性能优化、用户体验改进
+- **当前架构**：混合架构（第三阶段），主Agent直接扮演 + 工具型Sub-Agent
+- **技术成熟度**：核心功能实现完整，上下文工程优化完成
+- **代码质量**：通过架构调整改善了代码生成效果
+- **核心能力**：
+  - ✅ Multi-Agent协作流程完整
+  - ✅ 数据源分析（结构化/非结构化）  
+  - ✅ Notebook代码生成
+  - ✅ 人工介入与质量控制
+  - ✅ 工具型Sub-Agent操作
+- **工程特征**：在自动化程度与代码质量间实现平衡
+- **后续计划**：测试验证、性能监控、使用体验优化
 
 ---
 
-*Built with Claude Code Multi-Agent System*  
-*Latest Update: August 2025 - Agent Architecture Refactor*
+*Built with Claude Code Hybrid Multi-Agent Architecture*  
+*Latest Update: August 2025 - Context Engineering & Architecture Evolution*
