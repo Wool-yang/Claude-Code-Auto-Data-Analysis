@@ -33,7 +33,7 @@ D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
 │   │   └── README_frontmatter_tool.md             # Frontmatter工具说明
 │   ├── notebook_runners/                           # Notebook运行器
 │   │   ├── nb_runner.py                            # 主运行器脚本
-│   │   ├── README_nb_runner.md                     # 运行器说明
+│   │   ├── README.md                               # 运行器说明
 │   │   ├── core/                                   # 核心功能模块
 │   │   │   ├── __init__.py
 │   │   │   ├── notebook_executor.py               # 执行引擎

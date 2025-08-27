@@ -15,7 +15,7 @@ tools/
 │   └── README_frontmatter_tool.md # Frontmatter工具说明
 ├── notebook_runners/           # Notebook运行器相关工具
 │   ├── nb_runner.py           # Notebook运行器脚本
-│   └── README_nb_runner.md    # 运行器使用说明
+│   └── README.md               # 运行器使用说明
 ├── notebook_config/           # Notebook环境初始化工具
 │   ├── notebook_env_config.md # Notebook环境配置模板
 │   └── README.md              # 环境配置使用说明
@@ -144,7 +144,7 @@ python tools/notebook_runners/nb_runner.py notebook.ipynb --all --show-output
 - **备份管理**: 时间戳版本管理，安全恢复机制
 - **预览模式**: 所有编辑操作支持 --dry-run 安全预览
 
-详细使用方法请参考 `notebook_runners/README_nb_runner.md`
+详细使用方法请参考 `notebook_runners/README.md`
 
 ### notebook_config
 
