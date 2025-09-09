@@ -170,7 +170,7 @@ def try_read_csv(path, nrows=None):
                             s = recovered
                         except Exception:
                             pass
-            s = ''.join(ch for ch in s if (ch.isalnum() or ch.isspace() or ch in ['_', '-', '(', ')']))
+            s = ''.join(ch for ch in s if (ch.isalnum() or ch.isspace() or ch in ['_', '-', '(', ')', '.', '&', '%', '/', '+', ',', ':', '#', '@', '=']))
             s = s.strip()
             header_cols.append(s if s else None)
     raw_cols = list(df.columns)
@@ -363,22 +363,7 @@ def main():
                                 col_type = 'text'
                 except Exception:
                     col_type = 'unknown'
-                try:
-                    raw_values = ser.head(5).where(pd.notnull(ser.head(5)), None).tolist()
-                    # 处理pandas对象，确保JSON序列化兼容
-                    sample_vals = []
-                    for val in raw_values:
-                        if pd.isna(val) or val is None:
-                            sample_vals.append(None)
-                        elif hasattr(val, 'isoformat'):  # datetime objects
-                            sample_vals.append(val.isoformat())
-                        elif hasattr(val, 'item'):  # numpy scalars
-                            sample_vals.append(val.item())
-                        else:
-                            sample_vals.append(str(val) if not isinstance(val, (int, float, bool, str)) else val)
-                except Exception:
-                    sample_vals = []
-                columns_meta.append({'name': col, 'type': col_type, 'sample_values': sample_vals})
+                columns_meta.append({'name': col, 'type': col_type})
         except Exception:
             columns_meta = []
 

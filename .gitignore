@@ -169,3 +169,6 @@ ehthumbs.db
 Icon?
 *.icon?
 Desktop.ini
+
+# Temporary planning documents
+temp/

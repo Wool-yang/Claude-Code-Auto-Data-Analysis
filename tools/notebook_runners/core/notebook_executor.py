@@ -585,7 +585,8 @@ class NotebookExecutor:
     
     def _sync_images_after_execution(self, executed_cells: List[int], show_output: bool = False):
         """
-        执行完成后同步图片状态
+        执行完成后强制同步图片状态
+        对所有已执行的cell进行无条件图片同步
         
         Args:
             executed_cells: 已执行的cell索引列表
@@ -604,24 +605,33 @@ class NotebookExecutor:
             synced_count = 0
             total_images = 0
             
+            if show_output:
+                print(f"🔄 强制同步 {len(executed_cells)} 个已执行cell的图片状态")
+            
+            # 对所有已执行的cells进行强制图片同步
+            cells_with_images = []
             for cell_idx in executed_cells:
                 if cell_idx < len(updated_notebook.cells):
                     cell = updated_notebook.cells[cell_idx]
-                    result = image_mgr.save_cell_images(cell, cell_idx)
-                    
-                    if result['action'] == 'saved':
-                        synced_count += 1
-                        total_images += result.get('images_count', 0)
-                        if show_output:
-                            print(f"🖼️  Cell [{cell_idx}] 同步了 {result.get('images_count', 0)} 个图片")
-                    elif result['action'] == 'cleaned':
-                        synced_count += 1
-                        if show_output:
-                            print(f"🖼️  Cell [{cell_idx}] 清理了无图片输出的目录")
+                    if cell.cell_type == 'code':
+                        result = image_mgr.save_cell_images(cell, cell_idx)
+                        
+                        if result['action'] == 'saved':
+                            synced_count += 1
+                            image_count = result.get('images_count', 0)
+                            total_images += image_count
+                            cells_with_images.append((cell_idx, image_count))
+                        elif result['action'] == 'cleaned':
+                            synced_count += 1
             
-            if synced_count > 0 and show_output:
-                print(f"📊 图片同步完成: {synced_count} 个cells，共 {total_images} 个图片")
-                
+            # 输出同步结果摘要 - 只显示含图片的cell
+            if show_output:
+                if cells_with_images:
+                    for cell_idx, image_count in cells_with_images:
+                        print(f"🖼️  Cell [{cell_idx}] 包含 {image_count} 个图片")
+                else:
+                    print(f"ℹ️  本次执行无图片输出")
+                    
         except Exception as e:
             if show_output:
                 print(f"⚠️  图片同步失败: {e}")

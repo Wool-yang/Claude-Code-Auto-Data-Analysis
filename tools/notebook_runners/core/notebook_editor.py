@@ -53,12 +53,17 @@ class NotebookEditor:
             return False
     
     def _sync_images_after_edit(self, operation: str, **kwargs):
-        """编辑后即时同步图片索引"""
+        """
+        编辑后强制同步图片索引
+        对所有编辑操作进行无条件图片同步
+        """
         try:
             from core.image_manager import ImageManager
-            image_mgr = ImageManager(str(self.notebook_path))
             
+            # 执行图片同步（无条件）
+            image_mgr = ImageManager(str(self.notebook_path))
             result = None
+            
             if operation == "delete":
                 result = image_mgr.handle_cell_deletion(kwargs.get('deleted_index'))
             elif operation == "insert":
@@ -80,7 +85,7 @@ class NotebookEditor:
                     has_real_operation = result.get('renamed_dirs_count', 0) > 0
                 elif result.get('action') == 'move_handled':
                     has_real_operation = result.get('moved_dirs_count', 0) > 0
-                elif result.get('action') in ['cleaned', 'saved']:
+                elif result.get('action') in ['cleaned', 'saved', 'preserved']:
                     has_real_operation = True
                 
                 if has_real_operation:
@@ -90,7 +95,10 @@ class NotebookEditor:
             print(f"Warning: 图片同步失败: {e}")
     
     def _sync_images_after_batch_delete(self, deleted_indices: List[int]):
-        """批量删除后即时同步图片索引"""
+        """
+        批量删除后强制同步图片索引
+        批量操作总是需要同步，因为涉及索引重排
+        """
         try:
             from core.image_manager import ImageManager
             image_mgr = ImageManager(str(self.notebook_path))
@@ -109,11 +117,15 @@ class NotebookEditor:
             print(f"Warning: 批量图片同步失败: {e}")
     
     def _sync_images_after_batch_clear(self, cleared_indices: List[int]):
-        """批量清空输出后即时同步图片状态"""
+        """
+        批量清空输出后强制同步图片状态
+        对所有清空输出的cell进行无条件图片处理
+        """
         try:
             from core.image_manager import ImageManager
-            image_mgr = ImageManager(str(self.notebook_path))
             
+            # 执行同步（无条件）
+            image_mgr = ImageManager(str(self.notebook_path))
             result = image_mgr.handle_batch_clear_outputs(cleared_indices)
             
             # 只在实际有图片操作时才输出信息
@@ -121,7 +133,8 @@ class NotebookEditor:
                 cleaned_count = result.get('cleaned_count', 0)
                 
                 if cleaned_count > 0:
-                    print(f"🖼️  {result.get('message', '批量图片清理完成')}")
+                    message = f"批量清理了 {cleaned_count}/{len(cleared_indices)} 个cells的图片"
+                    print(f"🖼️  {message}")
                     
         except Exception as e:
             print(f"Warning: 批量图片清理失败: {e}")
@@ -541,13 +554,8 @@ def create_blank_notebook(notebook_path: str) -> bool:
         return False
 
 
-def edit_cell_content(notebook_path: str, identifier: str, content: str, dry_run: bool = False) -> bool:
+def edit_cell_content(notebook_path: str, identifier: str, content: str) -> bool:
     """编辑cell内容（兼容函数）"""
-    if dry_run:
-        print(f"[预览] 将编辑 {notebook_path} 中的 cell {identifier}")
-        print(f"[预览] 新内容: {content[:100]}...")
-        return True
-    
     try:
         editor = NotebookEditor(notebook_path)
         return editor.edit_cell(identifier, content)
@@ -556,12 +564,8 @@ def edit_cell_content(notebook_path: str, identifier: str, content: str, dry_run
         return False
 
 
-def delete_cell(notebook_path: str, identifier: str, dry_run: bool = False) -> bool:
+def delete_cell(notebook_path: str, identifier: str) -> bool:
     """删除cell（兼容函数）"""
-    if dry_run:
-        print(f"[预览] 将删除 {notebook_path} 中的 cell {identifier}")
-        return True
-    
     try:
         editor = NotebookEditor(notebook_path)
         return editor.delete_cell(identifier)
@@ -570,13 +574,8 @@ def delete_cell(notebook_path: str, identifier: str, dry_run: bool = False) -> b
         return False
 
 
-def insert_cell(notebook_path: str, position: int, cell_type: str, content: str, dry_run: bool = False) -> bool:
+def insert_cell(notebook_path: str, position: int, cell_type: str, content: str) -> bool:
     """插入cell（兼容函数）"""
-    if dry_run:
-        print(f"[预览] 将在 {notebook_path} 的位置 {position} 插入 {cell_type} cell")
-        print(f"[预览] 内容: {content[:100]}...")
-        return True
-    
     try:
         editor = NotebookEditor(notebook_path)
         return editor.insert_cell(position, cell_type, content)
@@ -585,12 +584,8 @@ def insert_cell(notebook_path: str, position: int, cell_type: str, content: str,
         return False
 
 
-def move_cell(notebook_path: str, from_idx: int, to_idx: int, dry_run: bool = False) -> bool:
+def move_cell(notebook_path: str, from_idx: int, to_idx: int) -> bool:
     """移动cell（兼容函数）"""
-    if dry_run:
-        print(f"[预览] 将在 {notebook_path} 中移动 cell {from_idx} 到位置 {to_idx}")
-        return True
-    
     try:
         editor = NotebookEditor(notebook_path)
         return editor.move_cell(from_idx, to_idx)
@@ -599,12 +594,8 @@ def move_cell(notebook_path: str, from_idx: int, to_idx: int, dry_run: bool = Fa
         return False
 
 
-def copy_cell(notebook_path: str, from_idx: int, to_idx: int, dry_run: bool = False) -> bool:
+def copy_cell(notebook_path: str, from_idx: int, to_idx: int) -> bool:
     """复制cell（兼容函数）"""
-    if dry_run:
-        print(f"[预览] 将在 {notebook_path} 中复制 cell {from_idx} 到位置 {to_idx}")
-        return True
-    
     try:
         editor = NotebookEditor(notebook_path)
         return editor.copy_cell(from_idx, to_idx)
@@ -613,12 +604,8 @@ def copy_cell(notebook_path: str, from_idx: int, to_idx: int, dry_run: bool = Fa
         return False
 
 
-def convert_cell_type(notebook_path: str, identifier: str, target_type: str, dry_run: bool = False) -> bool:
+def convert_cell_type(notebook_path: str, identifier: str, target_type: str) -> bool:
     """转换cell类型（兼容函数）"""
-    if dry_run:
-        print(f"[预览] 将转换 {notebook_path} 中 cell {identifier} 为 {target_type} 类型")
-        return True
-    
     try:
         editor = NotebookEditor(notebook_path)
         return editor.convert_cell_type(identifier, target_type)
@@ -627,12 +614,8 @@ def convert_cell_type(notebook_path: str, identifier: str, target_type: str, dry
         return False
 
 
-def clear_cell_output(notebook_path: str, identifier: str, dry_run: bool = False) -> bool:
+def clear_cell_output(notebook_path: str, identifier: str) -> bool:
     """清空cell输出（兼容函数）"""
-    if dry_run:
-        print(f"[预览] 将清空 {notebook_path} 中 cell {identifier} 的输出")
-        return True
-    
     try:
         editor = NotebookEditor(notebook_path)
         return editor.clear_cell_output(identifier)
@@ -641,17 +624,13 @@ def clear_cell_output(notebook_path: str, identifier: str, dry_run: bool = False
         return False
 
 
-def batch_delete_cells(notebook_path: str, range_str: str, dry_run: bool = False) -> bool:
+def batch_delete_cells(notebook_path: str, range_str: str) -> bool:
     """批量删除cells（兼容函数）"""
     try:
         from utils.helpers import parse_cell_range, resolve_cell_identifiers
         
         # 解析范围字符串，支持cell_id
         cell_identifiers = parse_cell_range(range_str)
-        
-        if dry_run:
-            print(f"[预览] 将删除 {notebook_path} 中的 cells: {cell_identifiers}")
-            return True
         
         editor = NotebookEditor(notebook_path)
         # 将标识符解析为索引
@@ -668,17 +647,13 @@ def batch_delete_cells(notebook_path: str, range_str: str, dry_run: bool = False
         return False
 
 
-def batch_clear_outputs(notebook_path: str, range_str: str, dry_run: bool = False) -> bool:
+def batch_clear_outputs(notebook_path: str, range_str: str) -> bool:
     """批量清空输出（兼容函数）"""
     try:
         from utils.helpers import parse_cell_range, resolve_cell_identifiers
         
         # 解析范围字符串，支持cell_id
         cell_identifiers = parse_cell_range(range_str)
-        
-        if dry_run:
-            print(f"[预览] 将清空 {notebook_path} 中 cells {cell_identifiers} 的输出")
-            return True
         
         editor = NotebookEditor(notebook_path)
         # 将标识符解析为索引
@@ -695,17 +670,13 @@ def batch_clear_outputs(notebook_path: str, range_str: str, dry_run: bool = Fals
         return False
 
 
-def batch_convert_cells(notebook_path: str, range_str: str, target_type: str, dry_run: bool = False) -> bool:
+def batch_convert_cells(notebook_path: str, range_str: str, target_type: str) -> bool:
     """批量转换cell类型（兼容函数）"""
     try:
         from utils.helpers import parse_cell_range, resolve_cell_identifiers
         
         # 解析范围字符串，支持cell_id
         cell_identifiers = parse_cell_range(range_str)
-        
-        if dry_run:
-            print(f"[预览] 将转换 {notebook_path} 中 cells {cell_identifiers} 为 {target_type} 类型")
-            return True
         
         editor = NotebookEditor(notebook_path)
         # 将标识符解析为索引

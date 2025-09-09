@@ -162,14 +162,13 @@ class NotebookIO:
             return []
     
     @staticmethod
-    def restore_backup(notebook_path: str, backup_id: str, dry_run: bool = False) -> bool:
+    def restore_backup(notebook_path: str, backup_id: str) -> bool:
         """
         恢复备份
         
         Args:
             notebook_path: 目标notebook路径
             backup_id: 备份ID
-            dry_run: 预览模式
         """
         try:
             backup_dir = NotebookIO.get_backup_dir(notebook_path)
@@ -190,13 +189,6 @@ class NotebookIO:
                 print(f"备份文件不存在: {backup_file}")
                 return False
             
-            if dry_run:
-                print(f"[预览] 将恢复备份 {backup_id}")
-                print(f"[预览] 备份文件: {backup_file}")
-                print(f"[预览] 目标文件: {notebook_path}")
-                print(f"[预览] 备份描述: {backup_info.get('description', '无')}")
-                return True
-            
             # 创建当前文件的自动备份
             current_backup_id = NotebookIO.create_backup(notebook_path, f"恢复前自动备份")
             if current_backup_id:
@@ -213,7 +205,7 @@ class NotebookIO:
             return False
     
     @staticmethod
-    def delete_backup(notebook_path: str, backup_id: str, dry_run: bool = False) -> bool:
+    def delete_backup(notebook_path: str, backup_id: str) -> bool:
         """删除指定备份"""
         try:
             backup_dir = NotebookIO.get_backup_dir(notebook_path)
@@ -229,12 +221,6 @@ class NotebookIO:
                 backup_info = json.load(f)
             
             backup_file = Path(backup_info['backup_file'])
-            
-            if dry_run:
-                print(f"[预览] 将删除备份 {backup_id}")
-                print(f"[预览] 备份文件: {backup_file}")
-                print(f"[预览] 信息文件: {info_file}")
-                return True
             
             # 删除文件
             files_deleted = 0
@@ -255,14 +241,13 @@ class NotebookIO:
             return False
     
     @staticmethod
-    def cleanup_old_backups(notebook_path: str, keep_count: int = 10, dry_run: bool = False) -> List[str]:
+    def cleanup_old_backups(notebook_path: str, keep_count: int = 10) -> List[str]:
         """
         清理旧备份，保留最新的N个
         
         Args:
             notebook_path: notebook路径
             keep_count: 保留的备份数量
-            dry_run: 预览模式
         
         Returns:
             被删除的备份ID列表
@@ -271,8 +256,6 @@ class NotebookIO:
             backups = NotebookIO.list_backups(notebook_path)
             
             if len(backups) <= keep_count:
-                if dry_run:
-                    print(f"[预览] 当前有 {len(backups)} 个备份，无需清理")
                 return []
             
             # 按时间排序，保留最新的
@@ -280,12 +263,6 @@ class NotebookIO:
             
             # 要删除的备份
             to_delete = backups[keep_count:]
-            
-            if dry_run:
-                print(f"[预览] 将删除 {len(to_delete)} 个旧备份:")
-                for backup in to_delete:
-                    print(f"[预览]   {backup['backup_id']} - {backup.get('description', '无描述')}")
-                return [b['backup_id'] for b in to_delete]
             
             # 执行删除
             deleted_ids = []
@@ -336,19 +313,19 @@ def list_backups(notebook_path: str) -> None:
         print()
 
 
-def restore_backup(notebook_path: str, backup_id: str, dry_run: bool = False) -> bool:
+def restore_backup(notebook_path: str, backup_id: str) -> bool:
     """恢复备份（兼容函数）"""
-    return NotebookIO.restore_backup(notebook_path, backup_id, dry_run)
+    return NotebookIO.restore_backup(notebook_path, backup_id)
 
 
-def delete_backup(notebook_path: str, backup_id: str, dry_run: bool = False) -> bool:
+def delete_backup(notebook_path: str, backup_id: str) -> bool:
     """删除备份（兼容函数）"""
-    return NotebookIO.delete_backup(notebook_path, backup_id, dry_run)
+    return NotebookIO.delete_backup(notebook_path, backup_id)
 
 
-def cleanup_old_backups(notebook_path: str, keep_count: int = 10, dry_run: bool = False) -> List[str]:
+def cleanup_old_backups(notebook_path: str, keep_count: int = 10) -> List[str]:
     """清理旧备份（兼容函数）"""
-    return NotebookIO.cleanup_old_backups(notebook_path, keep_count, dry_run)
+    return NotebookIO.cleanup_old_backups(notebook_path, keep_count)
 
 
 def show_backup_info(notebook_path: str) -> None:

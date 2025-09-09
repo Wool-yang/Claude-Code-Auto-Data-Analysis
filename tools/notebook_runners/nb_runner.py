@@ -23,8 +23,9 @@ def print_error_and_exit(message: str, exit_code: int = 1):
 try:
     from core.notebook_executor import NotebookExecutor, run_entire_notebook
     from core.notebook_editor import NotebookEditor, create_blank_notebook, edit_cell_content, delete_cell, insert_cell, move_cell, copy_cell, convert_cell_type, clear_cell_output, batch_delete_cells, batch_clear_outputs, batch_convert_cells, get_cell_info
-    from core.notebook_analyzer import NotebookAnalyzer, show_notebook_status
+    from core.notebook_analyzer import NotebookAnalyzer, show_notebook_status, show_comprehensive_status
     from core.image_manager import ImageManager, save_notebook_images, list_notebook_images, clean_notebook_images
+    from core.preview_manager import PreviewSessionManager
     from utils.notebook_io import NotebookIO, create_backup, list_backups, restore_backup, delete_backup, cleanup_old_backups, show_backup_info
     from utils.helpers import parse_cell_range, format_execution_result, resolve_cell_identifiers
 except ImportError as e:
@@ -74,11 +75,15 @@ def main():
   备份管理:
     --backup "description"    --list-backups    --restore-backup ID
 
+  预览模式:
+    --enter-preview                       # 进入预览模式(自动备份)
+    --exit-preview [keep]                 # 退出预览(默认discard，可选keep)
+    --preview-status                      # 查看预览状态
+
 附加选项:
   --show-output                         # 执行cell时在控制台显示输出结果
   --output-only                         # 配合--get使用，仅获取输出信息
   --code-stdin                          # 从标准输入读取代码内容(配合编辑操作)
-  --dry-run                             # 预览模式，不实际修改文件
   --case-sensitive                      # 搜索时大小写敏感
 
 标准代码输入方式 (Here Document + stdin):
@@ -89,7 +94,13 @@ def main():
   print('支持所有引号类型!')
   EOF
 
-详细文档: tools/notebook_runners/README_nb_runner.md
+预览模式使用示例:
+  python nb_runner.py notebook.ipynb --enter-preview           # 进入预览模式
+  python nb_runner.py notebook.ipynb --insert-cell 0 --code-stdin  # [PREVIEW] 模式下操作
+  python nb_runner.py notebook.ipynb --exit-preview            # 退出并丢弃更改
+  python nb_runner.py notebook.ipynb --exit-preview keep       # 退出并保留更改
+
+详细文档: tools/notebook_runners/README.md
         ''')
     parser.add_argument('notebook_path', help='Notebook文件路径')
     
@@ -133,13 +144,17 @@ def main():
     action_group.add_argument('--list-images', action='store_true', help='查看已保存的图片详情')
     action_group.add_argument('--storage-info', action='store_true', help='显示存储统计信息')
     
+    # 预览模式管理功能
+    action_group.add_argument('--enter-preview', action='store_true', help='进入预览模式（自动创建备份）')
+    action_group.add_argument('--exit-preview', nargs='?', const='discard', choices=['discard', 'keep'], help='退出预览模式，默认discard丢弃更改，可选keep保留更改')
+    action_group.add_argument('--preview-status', action='store_true', help='查看当前预览模式状态')
+    
     # 基础选项
     parser.add_argument('--show-output', action='store_true', help='执行cell时在控制台显示输出结果（配合--all, --cells使用）')
     parser.add_argument('--output-only', action='store_true', help='配合--get使用，仅获取输出信息，不显示源代码')
     parser.add_argument('--code-stdin', action='store_true', help='从标准输入读取代码内容，配合--edit-cell或--insert-cell使用Here Document格式')
     
     # 通用选项
-    parser.add_argument('--dry-run', action='store_true', help='预览模式，不实际修改文件，适用于编辑和批量操作')
     parser.add_argument('--case-sensitive', action='store_true', help='搜索时大小写敏感，配合--search使用')
     
     args = parser.parse_args()
@@ -216,6 +231,47 @@ def main():
         print_error_and_exit(f"文件 {args.notebook_path} 不存在\n提示: 使用 --create 参数创建新文件")
     
     try:
+        # 初始化预览会话管理器
+        preview_manager = PreviewSessionManager(args.notebook_path)
+        preview_indicator = preview_manager.get_preview_indicator()
+        
+        # 处理预览模式管理功能
+        if args.enter_preview:
+            result = preview_manager.enter_preview_mode()
+            if result["success"]:
+                print(f"✅ {result['message']}")
+                print(f"   备份ID: {result['backup_id']}")
+                print(f"   开始时间: {result['started_at']}")
+                print(f"   现在可以在 [PREVIEW] 模式下进行任何操作")
+            else:
+                print(f"❌ 进入预览模式失败: {result['error']}")
+                sys.exit(1)
+            return
+        elif args.exit_preview is not None:
+            keep_changes = (args.exit_preview == 'keep')
+            result = preview_manager.exit_preview_mode(keep_changes)
+            if result["success"]:
+                print(f"✅ {result['message']}")
+                print(f"   预览持续时间: {result.get('started_at', 'N/A')}")
+                print(f"   操作数量: {result.get('operations_count', 0)}")
+            else:
+                print(f"❌ 退出预览模式失败: {result['error']}")
+                sys.exit(1)
+            return
+        elif args.preview_status:
+            status = preview_manager.get_preview_status()
+            if status["in_preview"]:
+                print(f"📋 预览模式状态:")
+                print(f"   状态: 预览模式运行中")
+                print(f"   开始时间: {status.get('started_at', 'N/A')}")
+                print(f"   运行时间: {status.get('duration', 'N/A')}")
+                print(f"   备份ID: {status.get('backup_id', 'N/A')}")
+                print(f"   执行操作数: {status.get('operations_count', 0)}")
+                print(f"   描述: {status.get('description', 'N/A')}")
+            else:
+                print("📋 当前不在预览模式")
+            return
+        
         # 处理新增结构查询功能
         if args.get is not None:
             from core.notebook_analyzer import NotebookAnalyzer
@@ -231,7 +287,6 @@ def main():
                 show_notebook_status(args.notebook_path)
             else:
                 # 显示指定的状态信息
-                from core.notebook_analyzer import show_comprehensive_status
                 show_comprehensive_status(args.notebook_path, args.status)
             return
         elif args.search:
@@ -243,17 +298,35 @@ def main():
             cell_identifier = args.edit_cell[0]
             content = read_code_from_stdin()
             
-            if edit_cell_content(args.notebook_path, cell_identifier, content, args.dry_run):
-                print(f"✅ Cell [{cell_identifier}] 编辑完成")
+            # 记录预览操作日志
+            preview_manager.log_operation("edit_cell", {
+                "cell_identifier": cell_identifier,
+                "content_length": len(content)
+            })
+            
+            if edit_cell_content(args.notebook_path, cell_identifier, content):
+                print(f"{preview_indicator}✅ Cell [{cell_identifier}] 编辑完成")
             return
         elif args.delete_cell is not None:
-            if delete_cell(args.notebook_path, args.delete_cell, args.dry_run):
-                print(f"✅ Cell [{args.delete_cell}] 删除完成")
+            # 记录预览操作日志
+            preview_manager.log_operation("delete_cell", {
+                "cell_identifier": args.delete_cell
+            })
+            
+            if delete_cell(args.notebook_path, args.delete_cell):
+                print(f"{preview_indicator}✅ Cell [{args.delete_cell}] 删除完成")
             return
         elif args.move_cell:
             from_identifier, to_identifier = args.move_cell
-            if move_cell(args.notebook_path, from_identifier, to_identifier, args.dry_run):
-                print(f"✅ Cell 从 [{from_identifier}] 移动到 [{to_identifier}] 完成")
+            
+            # 记录预览操作日志
+            preview_manager.log_operation("move_cell", {
+                "from_identifier": from_identifier,
+                "to_identifier": to_identifier
+            })
+            
+            if move_cell(args.notebook_path, from_identifier, to_identifier):
+                print(f"{preview_indicator}✅ Cell 从 [{from_identifier}] 移动到 [{to_identifier}] 完成")
             return
         elif args.insert_cell:
             # 验证插入位置参数
@@ -273,37 +346,80 @@ def main():
             
             content = read_code_from_stdin()
             
-            if insert_cell(args.notebook_path, pos, cell_type, content, args.dry_run):
-                print(f"✅ 在位置 [{pos}] 插入 {cell_type} Cell 完成")
+            # 记录预览操作日志
+            preview_manager.log_operation("insert_cell", {
+                "position": pos,
+                "cell_type": cell_type,
+                "content_length": len(content)
+            })
+            
+            if insert_cell(args.notebook_path, pos, cell_type, content):
+                print(f"{preview_indicator}✅ 在位置 [{pos}] 插入 {cell_type} Cell 完成")
             return
         elif args.copy_cell:
             from_identifier, to_identifier = args.copy_cell
-            if copy_cell(args.notebook_path, from_identifier, to_identifier, args.dry_run):
-                print(f"✅ Cell 从 [{from_identifier}] 复制到 [{to_identifier}] 完成")
+            
+            # 记录预览操作日志
+            preview_manager.log_operation("copy_cell", {
+                "from_identifier": from_identifier,
+                "to_identifier": to_identifier
+            })
+            
+            if copy_cell(args.notebook_path, from_identifier, to_identifier):
+                print(f"{preview_indicator}✅ Cell 从 [{from_identifier}] 复制到 [{to_identifier}] 完成")
             return
         elif args.convert_cell:
             cell_identifier, target_type = args.convert_cell[0], args.convert_cell[1]
-            if convert_cell_type(args.notebook_path, cell_identifier, target_type, args.dry_run):
-                print(f"✅ Cell [{cell_identifier}] 转换为 {target_type} 类型完成")
+            
+            # 记录预览操作日志
+            preview_manager.log_operation("convert_cell", {
+                "cell_identifier": cell_identifier,
+                "target_type": target_type
+            })
+            
+            if convert_cell_type(args.notebook_path, cell_identifier, target_type):
+                print(f"{preview_indicator}✅ Cell [{cell_identifier}] 转换为 {target_type} 类型完成")
             return
         elif args.clear_output is not None:
-            if clear_cell_output(args.notebook_path, args.clear_output, args.dry_run):
-                print(f"✅ Cell [{args.clear_output}] 输出清空完成")
+            # 记录预览操作日志
+            preview_manager.log_operation("clear_output", {
+                "cell_identifier": args.clear_output
+            })
+            
+            if clear_cell_output(args.notebook_path, args.clear_output):
+                print(f"{preview_indicator}✅ Cell [{args.clear_output}] 输出清空完成")
             return
         
         # 处理批量操作功能
         elif args.batch_delete:
-            if batch_delete_cells(args.notebook_path, args.batch_delete, args.dry_run):
-                print("✅ 批量删除操作完成")
+            # 记录预览操作日志
+            preview_manager.log_operation("batch_delete", {
+                "cell_range": args.batch_delete
+            })
+            
+            if batch_delete_cells(args.notebook_path, args.batch_delete):
+                print(f"{preview_indicator}✅ 批量删除操作完成")
             return
         elif args.batch_clear_outputs:
-            if batch_clear_outputs(args.notebook_path, args.batch_clear_outputs, args.dry_run):
-                print("✅ 批量清空输出操作完成")
+            # 记录预览操作日志
+            preview_manager.log_operation("batch_clear_outputs", {
+                "cell_range": args.batch_clear_outputs
+            })
+            
+            if batch_clear_outputs(args.notebook_path, args.batch_clear_outputs):
+                print(f"{preview_indicator}✅ 批量清空输出操作完成")
             return
         elif args.batch_convert:
             cell_range, target_type = args.batch_convert
-            if batch_convert_cells(args.notebook_path, cell_range, target_type, args.dry_run):
-                print("✅ 批量转换类型操作完成")
+            
+            # 记录预览操作日志
+            preview_manager.log_operation("batch_convert", {
+                "cell_range": cell_range,
+                "target_type": target_type
+            })
+            
+            if batch_convert_cells(args.notebook_path, cell_range, target_type):
+                print(f"{preview_indicator}✅ 批量转换类型操作完成")
             return
         
         # 处理备份管理功能
@@ -317,15 +433,15 @@ def main():
             list_backups(args.notebook_path)
             return
         elif args.restore_backup:
-            if restore_backup(args.notebook_path, args.restore_backup, args.dry_run):
+            if restore_backup(args.notebook_path, args.restore_backup):
                 print("✅ 备份恢复完成")
             return
         elif args.delete_backup:
-            if delete_backup(args.notebook_path, args.delete_backup, args.dry_run):
+            if delete_backup(args.notebook_path, args.delete_backup):
                 print("✅ 备份删除完成")
             return
         elif args.cleanup_backups is not None:
-            deleted_ids = cleanup_old_backups(args.notebook_path, args.cleanup_backups, args.dry_run)
+            deleted_ids = cleanup_old_backups(args.notebook_path, args.cleanup_backups)
             if deleted_ids:
                 print(f"✅ 清理完成，删除了 {len(deleted_ids)} 个旧备份")
             return
@@ -356,17 +472,35 @@ def main():
         
         # 默认执行模式
         elif args.all:
+            # 记录预览操作日志
+            preview_manager.log_operation("execute_all", {})
+            
             executor = NotebookExecutor(args.notebook_path)
             result = executor.execute_all(args.show_output)
+            
+            # 执行后自动同步图片
+            try:
+                image_manager = ImageManager(args.notebook_path)
+                image_manager.sync_all_images(silent=True)
+            except Exception as e:
+                # 图片同步失败不影响主流程
+                pass
             
             if not args.show_output:
                 # 如果没有显示输出，则显示执行报告
                 formatted_result = format_execution_result(result)
-                print(formatted_result)
+                print(f"{preview_indicator}{formatted_result}")
+            else:
+                print(f"{preview_indicator}执行完成")
             
             if 'error' in result or result.get('error_count', 0) > 0:
                 sys.exit(1)
         elif args.cells:
+            # 记录预览操作日志
+            preview_manager.log_operation("execute_cells", {
+                "cells": args.cells
+            })
+            
             # 使用统一的cell标识符解析
             from utils.helpers import parse_and_resolve_cells
             executor = NotebookExecutor(args.notebook_path)
@@ -377,22 +511,45 @@ def main():
             
             result = executor.execute_cells(cell_indices, args.show_output)
             
+            # 执行后自动同步图片
+            try:
+                image_manager = ImageManager(args.notebook_path)
+                image_manager.sync_all_images(silent=True)
+            except Exception as e:
+                # 图片同步失败不影响主流程
+                pass
+            
             if not args.show_output:
                 # 如果没有显示输出，则显示执行报告
                 formatted_result = format_execution_result(result)
-                print(formatted_result)
+                print(f"{preview_indicator}{formatted_result}")
+            else:
+                print(f"{preview_indicator}执行完成")
             
             if 'error' in result or result.get('error_count', 0) > 0:
                 sys.exit(1)
         else:
             # 默认运行整个notebook
+            # 记录预览操作日志
+            preview_manager.log_operation("execute_all_default", {})
+            
             executor = NotebookExecutor(args.notebook_path)
             result = executor.execute_all(args.show_output)
+            
+            # 执行后自动同步图片
+            try:
+                image_manager = ImageManager(args.notebook_path)
+                image_manager.sync_all_images(silent=True)
+            except Exception as e:
+                # 图片同步失败不影响主流程
+                pass
             
             if not args.show_output:
                 # 如果没有显示输出，则显示执行报告
                 formatted_result = format_execution_result(result)
-                print(formatted_result)
+                print(f"{preview_indicator}{formatted_result}")
+            else:
+                print(f"{preview_indicator}执行完成")
             
             if 'error' in result or result.get('error_count', 0) > 0:
                 sys.exit(1)

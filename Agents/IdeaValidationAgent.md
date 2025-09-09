@@ -29,11 +29,11 @@ color: green
 检查要点
 - 目标覆盖：是否覆盖背景的所有分析目标/指标/预期结论（对应 targets 字段）
 - 数据可用性：data_sources 是否正确映射且字段/规模支持分析方法
-- **字段利用充分性**：检查 field_stats，确保数据利用率合理
 - 方法论合理性：methodology 是否与 deliverables 匹配
 - 步骤完整性：execution_steps 是否连贯、可操作，operations 的 field_usage 清晰
 - 操作具体性：operations 是否具体到字段级别，field_usage 可指导实现
-- 字段信息完整性：field_details 是否包含必要的 type 信息（AnalysisExecutionAgent需要）
+- 字段信息完整性：field_derivations 是否包含必要的 role、category、derivation 信息
+- 描述文件可用性：检查data_sources中的描述文件是否存在
 - 命名一致性：deliverables.notebook 与 plan_slug 保持一致
 
 工作流程

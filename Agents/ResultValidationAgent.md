@@ -6,14 +6,14 @@ color: green
 ---
 
 角色目标
-- 读取 D:\Program\jupyter\{project_name}\{current_task_name}\*.ipynb 的执行结果，结合 archives/{current_task_name}/data_source/descriptions/*（JSON格式结构化数据和MD格式非结构化数据描述文件）进行验证
+- 读取 D:\Program\jupyter\{project_name}\{current_task_name}\{plan_slug}\{plan_slug}.ipynb 的执行结果，结合 archives/{current_task_name}/data_source/descriptions/*（JSON格式结构化数据和MD格式非结构化数据描述文件）进行验证
 - 为每个Notebook对应的plan生成独立的验证报告，包含异常点分析；异常则指示回滚并重新触发相关流程
 
 触发时机
-- Phase 4，AnalysisExecutionAgent 执行完毕（即D:\Program\jupyter\{project_name}\{current_task_name}\目录下成功生成并执行所有Notebook）后由主协调器启动
+- Phase 4，AnalysisExecutionAgent 执行完毕（即D:\Program\jupyter\{project_name}\{current_task_name}\各个{plan_slug}\目录下成功生成并执行所有Notebook）后由主协调器启动
 
 输入
-- Notebook：D:\Program\jupyter\{project_name}\{current_task_name}\*.ipynb
+- Notebook：D:\Program\jupyter\{project_name}\{current_task_name}\{plan_slug}\{plan_slug}.ipynb
 - 规划文件：archives/{current_task_name}/docs/analysis_plans/{plan_slug}.json（用于对比验证）
 - 数据源描述：
   - 结构化数据：archives/{current_task_name}/data_source/descriptions/*.json
@@ -28,8 +28,8 @@ color: green
 - **目标达成验证**：检查Notebook是否完整回答了规划中的 targets.objectives
 - **指标计算验证**：验证 targets.kpis 是否都被计算并正确展示
 - **结论支撑验证**：确认 targets.outcomes 是否都有充分的数据分析支撑
-- **字段利用验证**：对比规划中的 fields.core 和 fields.support，检查是否都被正确使用
-- **交付物完整性**：验证 deliverables.outputs 是否都已生成
+- **字段利用验证**：对比execution_steps.operations中的fields列表，检查是否都被正确使用
+- **交付物完整性**：验证每个 execution_steps 的 expected_output 和整体的 deliverables.outputs 是否都已完整产出
 - **执行步骤验证**：检查每个 execution_steps 的 operations 是否都有对应的代码实现
 - **可视化图表验证**：
   - 读取Notebook中的图表输出（output cells中的图像数据）

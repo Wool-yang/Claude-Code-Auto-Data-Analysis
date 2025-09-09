@@ -5,7 +5,7 @@
 ## 📂 完整目录结构
 
 ```
-D:\Desktop\data\数据复盘\Claude Code Auto Analysis\  # 项目根目录
+Claude Code 当前运行目录\  # 项目根目录
 ├── .claude/                                        # Claude Code配置目录
 │   ├── agents/                                     # Sub-Agent实现文档（Task工具调用）
 │   │   ├── NonstructuredSummaryAgent.md            # 非结构化数据摘要Agent

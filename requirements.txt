@@ -12,3 +12,7 @@ xlrd>=2.0.0
 # Jupyter notebook dependencies  
 nbformat>=5.0.0
 jupyter-client>=7.0.0
+
+# Visualization dependencies
+plotly>=6.3.0
+kaleido>=1.0.0

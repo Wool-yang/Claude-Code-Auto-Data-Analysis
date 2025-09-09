@@ -1,6 +1,24 @@
 # Jupyter Notebook Runner
 
-专为 AnalysisExecutionAgent 优化的 Notebook 执行工具，支持无状态执行、依赖检测和完整操作能力。
+专业的 Notebook 执行和管理工具，支持无状态执行、依赖检测和完整操作能力。
+
+## 🎯 工具定位
+
+**核心工具**：提供完整的Jupyter Notebook操作、执行、分析能力  
+**标准接口**：通过 `notebook_wrapper.sh` 提供统一的调用接口  
+**双重价值**：既支持Agent系统集成，又支持开发者直接使用
+
+### 推荐调用方式
+
+**Agent系统集成**：通过wrapper脚本统一调用
+```bash
+bash tools/notebook_runners/notebook_wrapper.sh <operation> <notebook_path> [params...]
+```
+
+**直接开发调试**：直接使用nb_runner.py命令
+```bash
+python tools/notebook_runners/nb_runner.py notebook.ipynb [options]
+```
 
 ## 🚀 快速开始
 
@@ -18,6 +36,12 @@ python tools/notebook_runners/nb_runner.py notebook.ipynb --all --show-output
 # 4. 查看结构和依赖
 python tools/notebook_runners/nb_runner.py notebook.ipynb --status structure
 python tools/notebook_runners/nb_runner.py notebook.ipynb --status deps
+
+# 5. 预览模式使用
+python tools/notebook_runners/nb_runner.py notebook.ipynb --enter-preview      # 进入预览模式
+python tools/notebook_runners/nb_runner.py notebook.ipynb --insert-cell 0 --code-stdin  # [PREVIEW] 插入cell
+python tools/notebook_runners/nb_runner.py notebook.ipynb --exit-preview       # 退出并丢弃更改
+python tools/notebook_runners/nb_runner.py notebook.ipynb --exit-preview keep  # 退出并保留更改
 ```
 
 ### 环境要求
@@ -27,402 +51,324 @@ python tools/notebook_runners/nb_runner.py notebook.ipynb --status deps
 
 ---
 
-## 📋 核心功能分类
+## 🔧 Wrapper脚本调用 (推荐方式)
 
-### 🚀 执行操作 (Execution)
+### 统一调用接口
 
-| 命令 | 功能 | 示例 |
-|------|------|------|
-| `--all` | 执行整个notebook | `--all --show-output` |
-| `--cells "范围"` | 执行指定cells（支持批量） | `--cells "0,1,2" --show-output` |
-
-**Cell标识符支持**：
-- **数字索引**: `0, 1, 2, 3...` (从0开始)
-- **Cell ID**: `1c29d688, 4896f9ab...` (Jupyter内部标识)
-- **混合使用**: `"0,abc123,3-5"` (索引、ID、范围混用)
-
-### 🔍 查询分析 (Query & Analysis)
-
-| 命令 | 功能 | 示例 |
-|------|------|------|
-| `--get [标识符]` | 获取cell信息 | `--get 0` / `--get all` |
-| `--status [选项]` | 查看状态信息 | 见下表 |
-| `--search "模式"` | 搜索文本(支持正则) | `--search "pandas"` |
-
-#### --status 子命令详解
-
-| 子命令 | 功能 | 输出内容 |
-|--------|------|----------|
-| `exec` | 执行状态 | 已执行cell数、执行率、输出统计 |
-| `structure` | 结构信息 | cell总数、类型分布、代码行数 |
-| `deps` | 依赖关系 | 变量依赖链、cell间关系 |
-| `errors` | 错误检查 | 错误cell位置、错误类型、行号 |
-| `all` | 全部信息 | 以上所有信息 |
-| (无参数) | 详细状态 | cell逐个状态、问题诊断 |
-
-**查询示例**：
+**标准调用格式**：
 ```bash
-# 获取特定cell信息
-python nb_runner.py notebook.ipynb --get 0
-python nb_runner.py notebook.ipynb --get "1c29d688"
-
-# 查看执行状态和结构
-python nb_runner.py notebook.ipynb --status exec
-python nb_runner.py notebook.ipynb --status structure
-
-# 分析依赖关系
-python nb_runner.py notebook.ipynb --status deps
-
-# 查找错误cell
-python nb_runner.py notebook.ipynb --status errors
-
-# 搜索功能（自动识别正则表达式）
-python nb_runner.py notebook.ipynb --search "import pandas"
-python nb_runner.py notebook.ipynb --search "pd\\.\\w+" --case-sensitive
+bash tools/notebook_runners/notebook_wrapper.sh <operation> <notebook_path> [params...]
 ```
 
-### ✏️ 编辑操作 (Edit)
+**核心优势**：
+- **编码处理**：自动处理Windows环境UTF-8编码问题
+- **参数标准化**：统一的操作接口和参数格式
+- **错误处理**：完善的错误恢复和重试机制
+- **文件传递**：支持通过文件路径传递代码内容，避免引号冲突
 
-| 分类 | 命令 | 功能 |
-|------|------|------|
-| **基础** | `--create` | 创建空白notebook |
-| **内容编辑** | `--edit-cell 标识符` | 编辑cell内容（支持数字索引或Cell ID） |
-| | `--insert-cell 位置 [类型]` | 插入新cell（位置必须是数字） |
-| | `--delete-cell 标识符` | 删除cell（支持数字索引或Cell ID） |
-| | `--clear-output 标识符` | 清空cell输出（支持数字索引或Cell ID） |
-| **位置调整** | `--move-cell 源 目标` | 移动cell位置（支持数字索引或Cell ID） |
-| | `--copy-cell 源 目标` | 复制cell（支持数字索引或Cell ID） |
-| **类型转换** | `--convert-cell 标识符 类型` | 转换cell类型（支持数字索引或Cell ID） |
+### Wrapper操作映射表
 
-**支持的cell类型**: `code`, `markdown`, `raw`
+#### 🚀 执行类操作
+| Wrapper操作 | nb_runner等价命令 | 说明 |
+|-------------|------------------|------|
+| `execute_all` | `--all --show-output` | 执行整个notebook |
+| `execute_cells <cells>` | `--cells "<cells>" --show-output` | 执行指定cells |
 
-### 📦 批量操作 (Batch Operations)
+#### 🔍 查询类操作
+| Wrapper操作 | nb_runner等价命令 | 说明 |
+|-------------|------------------|------|
+| `get_structure` | `--status structure` | 获取notebook结构信息 |
+| `get_status` | `--status` | 获取详细执行状态 |
+| `get_exec_status` | `--status exec` | 获取执行状态统计 |
+| `get_dependencies` | `--status deps` | 分析cell依赖关系 |
+| `get_errors` | `--status errors` | 查找错误cell |
+| `get_all_status` | `--status all` | 获取完整状态信息 |
+| `get_cell <index>` | `--get <index>` | 获取指定cell信息 |
+| `get_cell_output <index>` | `--get <index> --output-only` | 获取指定cell输出信息 |
+| `search <text>` | `--search "<text>"` | 搜索包含文本的cell |
 
-| 命令 | 功能 | 范围格式 |
-|------|------|----------|
-| `--batch-delete` | 批量删除cell | `"1,2,3"` / `"1-5"` / `"0,abc123,3-5"` |
-| `--batch-clear-outputs` | 批量清空输出 | 同上 |
-| `--batch-convert 范围 类型` | 批量转换类型 | 同上 |
+#### ✏️ 编辑类操作
+| Wrapper操作 | nb_runner等价命令 | 说明 | 文件支持 |
+|-------------|------------------|------|----------|
+| `create` | `--create` | 创建空白notebook | ❌ |
+| `insert_cell_file <pos> <type> <file>` | `--insert-cell <pos> <type> --code-stdin` | 从文件插入cell | ✅ |
+| `edit_cell_file <index> <file>` | `--edit-cell <index> --code-stdin` | 从文件编辑cell | ✅ |
+| `delete_cell <index>` | `--delete-cell <index>` | 删除cell | ❌ |
+| `move_cell <from> <to>` | `--move-cell <from> <to>` | 移动cell位置 | ❌ |
+| `copy_cell <from> <to>` | `--copy-cell <from> <to>` | 复制cell | ❌ |
+| `convert_cell <index> <type>` | `--convert-cell <index> <type>` | 转换cell类型 | ❌ |
+| `clear_output <index>` | `--clear-output <index>` | 清空cell输出 | ❌ |
 
-**批量操作示例**：
+#### 📦 批量操作
+| Wrapper操作 | nb_runner等价命令 | 说明 |
+|-------------|------------------|------|
+| `batch_delete <range>` | `--batch-delete "<range>"` | 批量删除cell |
+| `batch_clear_outputs <range>` | `--batch-clear-outputs "<range>"` | 批量清空输出 |
+| `batch_convert <range> <type>` | `--batch-convert "<range>" <type>` | 批量转换cell类型 |
+
+#### 💾 备份管理
+| Wrapper操作 | nb_runner等价命令 | 说明 |
+|-------------|------------------|------|
+| `backup [description]` | `--backup "[description]"` | 创建备份 |
+| `list_backups` | `--list-backups` | 列出所有备份 |
+| `restore <backup_id>` | `--restore-backup <backup_id>` | 恢复指定备份 |
+| `delete_backup <backup_id>` | `--delete-backup <backup_id>` | 删除指定备份 |
+| `cleanup <keep_count>` | `--cleanup-backups <keep_count>` | 清理旧备份 |
+
+#### 🖼️ 图片管理
+| Wrapper操作 | nb_runner等价命令 | 说明 |
+|-------------|------------------|------|
+| `sync_images` | `--sync-images` | 同步图片状态 |
+| `list_images` | `--list-images` | 查看图片详情 |
+| `storage_info` | `--storage-info` | 存储统计信息 |
+
+#### 🎭 预览模式管理
+| Wrapper操作 | nb_runner等价命令 | 说明 |
+|-------------|------------------|------|
+| `enter_preview` | `--enter-preview` | 进入预览模式（自动创建备份） |
+| `exit_preview [keep]` | `--exit-preview [keep]` | 退出预览模式，默认丢弃更改，可选保留 |
+| `preview_status` | `--preview-status` | 查看当前预览模式状态 |
+
+### 文件传递机制
+
+**核心机制**：通过文件路径传递代码内容，避免命令行参数的引号冲突问题
+
+**工作流程**：
+1. **代码写入文件**：将要插入/编辑的代码写入独立文件
+2. **传递文件路径**：wrapper调用时传递文件路径参数
+3. **自动读取内容**：wrapper脚本从文件读取代码并传递给nb_runner
+4. **完美格式保持**：保持代码的原始格式、缩进、引号类型
+
+**典型使用示例**：
 ```bash
-# 批量删除（支持预览）
-python nb_runner.py notebook.ipynb --batch-delete "10,11,12" --dry-run
-python nb_runner.py notebook.ipynb --batch-delete "10,11,12"
+# 1. Agent先将代码写入文件
+echo 'import pandas as pd
+print("数据处理开始")' > cell_code.py
 
-# 批量转换为markdown
-python nb_runner.py notebook.ipynb --batch-convert "1-5" markdown
+# 2. 通过wrapper插入cell
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file notebook.ipynb 0 code cell_code.py
 
-# 使用Cell ID批量操作
-python nb_runner.py notebook.ipynb --cells "1a2b3c4d,5e6f7a8b" --show-output
-
-# 混合使用索引和Cell ID
-python nb_runner.py notebook.ipynb --batch-clear-outputs "0,abc123,3-5"
+# 3. 执行验证
+bash tools/notebook_runners/notebook_wrapper.sh execute_cells notebook.ipynb "0"
 ```
 
-### 💾 备份管理 (Backup)
+### 🎭 预览模式详细说明
 
-| 命令 | 功能 | 示例 |
-|------|------|------|
-| `--backup [描述]` | 创建备份 | `--backup "重要修改前"` |
-| `--list-backups` | 列出所有备份 | |
-| `--restore-backup ID` | 恢复指定备份 | `--restore-backup 20250820_120109` |
-| `--delete-backup ID` | 删除指定备份 | `--delete-backup 20250820_120109` |
-| `--cleanup-backups [N]` | 清理旧备份 | `--cleanup-backups 10` |
-| `--backup-info` | 显示备份信息 | |
+**设计理念**：提供完整的"临时工作空间"，支持任意操作后选择保留或丢弃所有更改。
 
-**备份特性**：
-- **自动ID**: 基于时间戳(`20250820_120109`)
-- **版本管理**: 自动限制备份数量
-- **安全恢复**: 恢复前自动备份当前状态
+**核心特性**：
+- **自动备份**：进入预览模式时自动创建还原点
+- **操作隔离**：预览模式下的所有操作都有 [PREVIEW] 标识
+- **完整功能**：预览模式支持所有编辑、执行、批量操作
+- **安全退出**：默认丢弃更改，需显式指定才保留
 
-### 🖼️ 图片管理 (Image Management)
+**预览模式工作流**：
 
-| 命令 | 功能 |
-|------|------|
-| `--sync-images` | 同步图片状态(故障恢复) |
-| `--list-images` | 查看保存的图片详情 |
-| `--storage-info` | 显示存储统计信息 |
+```bash
+# 1. 进入预览模式（自动创建备份）
+bash tools/notebook_runners/notebook_wrapper.sh enter_preview notebook.ipynb
+# 输出: ✅ 成功进入预览模式
+#       备份ID: preview_start_20250829_143022
+#       [PREVIEW] 标识将出现在所有后续操作中
+
+# 2. 在预览模式下进行编辑操作
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file notebook.ipynb 0 code cell_code.py
+# 输出: [PREVIEW] ✅ 在位置 [0] 插入 code Cell 完成
+
+# 3. 执行代码验证功能
+bash tools/notebook_runners/notebook_wrapper.sh execute_cells notebook.ipynb "0"
+# 输出: [PREVIEW] 执行完成
+
+# 4. 检查执行结果和状态（关键验证步骤）
+bash tools/notebook_runners/notebook_wrapper.sh get_status notebook.ipynb
+# 输出: [PREVIEW] 📊 执行状态：已执行1个cell，成功1个，失败0个
+
+bash tools/notebook_runners/notebook_wrapper.sh get_errors notebook.ipynb
+# 输出: [PREVIEW] ✅ 未发现错误cell
+
+bash tools/notebook_runners/notebook_wrapper.sh get_cell notebook.ipynb 0
+# 输出: [PREVIEW] 📋 Cell [0] 信息：
+#       类型: code, 状态: 已执行, 输出: "环境初始化完成"
+
+# 5. 根据检查结果决定保留或丢弃
+# 5a. 结果满意，保留所有更改
+bash tools/notebook_runners/notebook_wrapper.sh exit_preview notebook.ipynb keep
+# 输出: ✅ 预览模式已退出，保留了 2 个操作的更改
+
+# 5b. 结果不满意，丢弃所有更改（默认安全行为）
+bash tools/notebook_runners/notebook_wrapper.sh exit_preview notebook.ipynb
+# 输出: ✅ 预览模式已退出，丢弃了 2 个操作的更改
+```
+
+**预览模式的实际应用场景**：
+- **安全实验**：测试复杂的数据处理逻辑，确认效果后再决定是否保留
+- **代码调试**：在预览环境中调试 notebook，避免污染原始版本
+- **分支开发**：类似 git 分支的概念，在隔离环境中开发新功能
+- **Agent 系统**：为 AnalysisExecutionAgent 提供安全的试错环境
+
+### 预览模式使用
+
+**预览模式**：
+- **完整工作空间**：支持所有操作类型（执行、编辑、批量、备份等）
+- **状态持久化**：预览会话在进程重启后仍然有效
+- **操作追踪**：记录预览期间的所有操作历史
+- **安全恢复**：基于自动备份的可靠恢复机制
+
+**标准工作流**：
+```bash
+# 预览模式工作流
+bash tools/notebook_runners/notebook_wrapper.sh enter_preview notebook.ipynb
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file notebook.ipynb 0 code cell.py  # [PREVIEW] 完整功能
+bash tools/notebook_runners/notebook_wrapper.sh exit_preview notebook.ipynb [keep]
+```
+
+**使用场景**：预览模式提供真正的工作空间隔离，适用于需要完整测试和验证的场景。
 
 ---
 
-## 📖 使用指南
+## 📋 Agent集成示例
 
-### Here Document 标准格式 (系统标准)
-
-**本系统使用 Here Document + EOF 格式作为插入/编辑多行代码的唯一标准方式**
-
-#### 标准语法
-```bash
-cat <<'EOF' | python nb_runner.py notebook.ipynb --edit-cell 0 --code-stdin
-代码内容...
-EOF
-```
-
-#### 格式要点
-1. **EOF必须单独一行**: 结束标记EOF必须独占一行，前后不能有任何字符
-2. **大小写敏感**: 开始和结束标记必须完全一致
-3. **完美引号支持**: 支持所有引号类型，无需转义
-
-#### 实际使用示例
-```bash
-# 插入环境初始化代码
-cat <<'EOF' | python nb_runner.py notebook.ipynb --insert-cell 0 code --code-stdin
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-
-# 配置中文显示
-plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei']
-plt.rcParams['axes.unicode_minus'] = False
-
-print('环境初始化完成')
-EOF
-
-# 编辑数据处理代码
-cat <<'EOF' | python nb_runner.py notebook.ipynb --edit-cell 2 --code-stdin
-# 数据加载和预处理
-data = pd.read_csv('analysis_data.csv', encoding='utf-8')
-print(f'数据形状: {data.shape}')
-
-# 数据清洗
-data_cleaned = data.dropna()
-print(f'清洗后: {data_cleaned.shape}')
-EOF
-
-# 复杂代码示例（包含各种引号和符号）
-cat <<'EOF' | python nb_runner.py notebook.ipynb --insert-cell 3 code --code-stdin
-# 可视化代码
-import plotly.express as px
-
-# 配置参数
-config = {
-    'title': '销售趋势分析', 
-    'font': 'Microsoft YaHei',
-    'colors': ['#FF6B6B', '#4ECDC4', '#45B7D1']
-}
-
-fig = px.line(data, x='日期', y='销售额', title=config['title'])
-fig.show()
-
-print("图表生成完成!")
-EOF
-```
-
-### 预览模式 (--dry-run)
-
-编辑操作、批量操作和部分备份操作都支持预览模式，先查看操作效果再决定是否执行：
+### 典型Agent调用流程
 
 ```bash
-# 预览编辑操作
-cat <<'EOF' | python nb_runner.py notebook.ipynb --edit-cell 2 --code-stdin --dry-run
-新的代码内容
-EOF
+# 基础工作流（非预览模式）
+bash tools/notebook_runners/notebook_wrapper.sh create analysis.ipynb
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file analysis.ipynb 0 code env_init.py
+bash tools/notebook_runners/notebook_wrapper.sh execute_cells analysis.ipynb "0"
+bash tools/notebook_runners/notebook_wrapper.sh get_status analysis.ipynb
 
-# 预览批量删除
-python nb_runner.py notebook.ipynb --batch-delete "10,15,20" --dry-run
+# 预览模式安全工作流（推荐用于复杂分析）
+bash tools/notebook_runners/notebook_wrapper.sh create analysis.ipynb
+
+# 进入预览模式进行安全开发
+bash tools/notebook_runners/notebook_wrapper.sh enter_preview analysis.ipynb
+
+# [PREVIEW] 模式下开发和测试
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file analysis.ipynb 0 code env_init.py
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file analysis.ipynb 1 code data_load.py
+bash tools/notebook_runners/notebook_wrapper.sh execute_cells analysis.ipynb "0,1"
+bash tools/notebook_runners/notebook_wrapper.sh get_status analysis.ipynb
+
+# 验证结果满意后保留更改，或丢弃重新开始
+bash tools/notebook_runners/notebook_wrapper.sh exit_preview analysis.ipynb keep  # 保留更改
+# bash tools/notebook_runners/notebook_wrapper.sh exit_preview analysis.ipynb     # 丢弃更改
 ```
 
----
-
-## 🎯 常见使用场景
-
-### 场景1: Agent逐Cell验证流程
-
-**工作流程**: 每次添加新Cell后验证执行，保持状态连续性
-
-```bash
-# 1. 创建新notebook
-python tools/notebook_runners/nb_runner.py analysis.ipynb --create
-
-# 2. 插入环境初始化Cell
-cat <<'EOF' | python tools/notebook_runners/nb_runner.py analysis.ipynb --insert-cell 0 code --code-stdin
-import pandas as pd
-import numpy as np
-print('环境初始化完成')
-EOF
-
-# 3. 执行首个Cell
-python tools/notebook_runners/nb_runner.py analysis.ipynb --cells "0" --show-output
-
-# 4. 继续添加数据加载Cell并扩展执行范围
-# ... (添加新Cell)
-python tools/notebook_runners/nb_runner.py analysis.ipynb --cells "0,1" --show-output
-
-# 5. 逐步扩展执行范围(智能依赖排序)
-python tools/notebook_runners/nb_runner.py analysis.ipynb --cells "0,1,2,3,4" --show-output
-
-# 6. 查看当前执行状态
-python tools/notebook_runners/nb_runner.py analysis.ipynb --status
-```
-
-### 场景2: 结构分析和调试
-
-```bash
-# 查看整体结构
-python tools/notebook_runners/nb_runner.py analysis.ipynb --status structure
-
-# 分析依赖关系（发现Cell间的变量依赖）
-python tools/notebook_runners/nb_runner.py analysis.ipynb --status deps
-
-# 查找错误Cell
-python tools/notebook_runners/nb_runner.py analysis.ipynb --status errors
-
-# 搜索特定内容
-python tools/notebook_runners/nb_runner.py analysis.ipynb --search "import pandas"
-python tools/notebook_runners/nb_runner.py analysis.ipynb --search "Error|Exception"
-```
-
-### 场景3: 安全编辑和备份
-
-```bash
-# 1. 创建备份
-python tools/notebook_runners/nb_runner.py analysis.ipynb --backup "重要修改前备份"
-
-# 2. 预览编辑操作
-cat <<'EOF' | python tools/notebook_runners/nb_runner.py analysis.ipynb --edit-cell 2 --code-stdin --dry-run
-import pandas as pd
-data = pd.read_csv('new_data.csv')
-print(f'数据加载: {data.shape}')
-EOF
-
-# 3. 确认无误后执行实际编辑
-cat <<'EOF' | python tools/notebook_runners/nb_runner.py analysis.ipynb --edit-cell 2 --code-stdin
-import pandas as pd  
-data = pd.read_csv('new_data.csv')
-print(f'数据加载: {data.shape}')
-EOF
-
-# 4. 如需要，可恢复备份
-python tools/notebook_runners/nb_runner.py analysis.ipynb --restore-backup 20250820_120109
-```
-
-### 场景4: 批量处理和清理
-
-```bash
-# 批量删除无用Cell（预览）
-python tools/notebook_runners/nb_runner.py analysis.ipynb --batch-delete "10,15,20" --dry-run
-
-# 批量转换Cell类型
-python tools/notebook_runners/nb_runner.py analysis.ipynb --batch-convert "1,3,5" markdown
-
-# 批量清空输出
-python tools/notebook_runners/nb_runner.py analysis.ipynb --batch-clear-outputs "1-10"
-
-# 批量执行特定范围
-python tools/notebook_runners/nb_runner.py analysis.ipynb --cells "2,3,4" --show-output
-```
-
-### 场景5: 依赖感知执行
-
-```bash
-# 1. 首次完整运行
-python tools/notebook_runners/nb_runner.py analysis.ipynb --all --show-output
-
-# 2. 修改Cell后，分析依赖关系
-python tools/notebook_runners/nb_runner.py analysis.ipynb --status deps
-# 输出示例:
-# 🔗 依赖关系:
-#    Cell [5] → [3]  
-#    Cell [7] → [3]
-# (发现Cell 5和7依赖Cell 3的变量)
-
-# 3. 基于依赖分析，智能执行受影响的Cell
-python tools/notebook_runners/nb_runner.py analysis.ipynb --cells "3,5,7" --show-output
-```
+### Agent协作的优势
+- ✅ **统一接口**：所有Agent使用相同的wrapper调用方式
+- ✅ **文件管理**：通过文件路径传递，完美支持复杂代码
+- ✅ **状态追踪**：每步操作后都能获取详细的执行状态反馈
+- ✅ **错误处理**：wrapper提供统一的错误处理和重试机制
+- ✅ **编码兼容**：自动处理Windows环境的编码问题
+- ✅ **预览模式**：提供完整的工作空间隔离，支持安全的开发和测试
+- ✅ **操作可逆**：预览模式支持完整的撤销机制，降低试错成本
 
 ---
 
 ## 🔧 技术架构
 
-### 模块化设计
+### 整体架构层次
+
 ```
-nb_runner.py (主入口，100%向后兼容)
-├── core/                           # 核心功能模块
-│   ├── notebook_executor.py       # 执行引擎
-│   ├── notebook_editor.py         # 编辑功能
-│   ├── notebook_analyzer.py       # 分析查询功能
-│   └── image_manager.py           # 图片管理
-├── utils/                          # 工具函数模块
-│   ├── notebook_io.py             # 备份管理
-│   └── helpers.py                 # 辅助函数
-└── old_modules_backup/             # 旧模块备份目录
+Agent系统调用层
+         ↓
+notebook_wrapper.sh (统一接口层)
+         ↓  
+nb_runner.py (核心工具层)
+         ↓
+Jupyter内核执行层
 ```
 
-### Cell状态类型
-- `✅ success`: 执行成功
-- `❌ failed`: 执行失败  
-- `❓ pending`: 待执行
-- `⚠️ dirty`: 内容变化需要重跑
+### 调用模式对比
 
-### 执行策略
-- **智能执行模式** (`--cells`): 按依赖关系排序，自动处理变量依赖
-- **原样执行模式** (`--all`): 按原始顺序，保持Notebook设计逻辑
-- **无状态执行**: 每次启动新kernel，确保环境一致性
+| 特性 | Wrapper调用 | 直接调用 |
+|------|------------|----------|
+| **适用场景** | Agent系统集成 | 开发调试 |
+| **接口复杂度** | 简化统一 | 完整灵活 |
+| **文件传递** | 支持文件路径 | Here Document |
+| **编码处理** | 自动处理 | 手动处理 |
+| **错误恢复** | 内置重试 | 手动处理 |
+| **跨平台** | 自动适配 | 需要适配 |
 
 ---
 
-## 🆘 故障排除
+## 🆘 基础故障排除
 
-### 常见问题
+### Wrapper调用问题
 
-**执行问题排查**:
 ```bash
-# 查看详细执行状态
-python nb_runner.py notebook.ipynb --status
+# 1. 检查wrapper脚本是否存在
+ls tools/notebook_runners/notebook_wrapper.sh
 
-# 查找错误Cell
-python nb_runner.py notebook.ipynb --status errors
+# 2. 手动测试wrapper调用
+bash tools/notebook_runners/notebook_wrapper.sh get_status notebook.ipynb
 
-# 重新完整执行
-python nb_runner.py notebook.ipynb --all --show-output
+# 3. 查看wrapper错误输出
+bash -x tools/notebook_runners/notebook_wrapper.sh execute_cells notebook.ipynb "0" 2>&1
 ```
 
-**编辑操作失败**:
-```bash
-# 使用预览模式检查
-python nb_runner.py notebook.ipynb --edit-cell 2 "内容" --dry-run
+### 文件传递问题
 
-# 检查Here Document格式
-# ✅ 正确: EOF单独一行
-# ❌ 错误: EOF后有空格或其他字符
+```bash
+# 1. 检查代码文件是否存在和可读
+ls -la cells/cell_code.py
+cat cells/cell_code.py  # 查看文件内容
+
+# 2. 预览执行一下（第5个参数true启用预览模式，不实际修改文件）
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file notebook.ipynb 0 code cells/test.py true
+
+# 3. 实际执行文件插入
+bash tools/notebook_runners/notebook_wrapper.sh insert_cell_file notebook.ipynb 0 code cells/test.py
 ```
 
-**Here Document格式错误**:
-```bash
-# ❌ 常见错误
-EOF)     # 错误：EOF后有括号
-EOF      # 错误：EOF前有空格
- 
-# ✅ 正确格式  
-EOF      # 正确：EOF单独一行，无任何额外字符
-```
+---
 
-### 调试技巧
-- 使用 `--status` 监控执行状态和依赖关系
-- 编辑前用 `--dry-run` 预览操作
-- 重要修改前用 `--backup` 创建备份
-- 使用 `--search` 快速定位代码位置
+## 📖 详细文档
+
+**完整功能文档**: [README_nb_runner.md](README_nb_runner.md)
+- 详细的nb_runner.py参数说明
+- Here Document标准格式
+- 高级使用场景
+- 技术架构深入解析
+- 完整故障排除指南
+
+**主要章节**:
+- 核心功能分类 (执行、查询、编辑、批量操作、备份管理)
+- 使用指南 (Here Document格式、预览模式)
+- 常见使用场景 (开发调试、结构分析、安全编辑等)
+- 技术架构 (模块化设计、执行机制、Cell状态管理)
+- 故障排除 (详细的问题排查和调试技巧)
 
 ---
 
 ## 📝 更新日志
 
+**v3.0.0 (2025-08-29)**
+- 🎭 **预览模式重构**：将无实用价值的 dry_run 重构为完整的预览工作空间
+- 🔄 **完整工作流支持**：预览模式支持任意操作（执行、编辑、批量操作等）
+- 🔒 **安全退出机制**：默认丢弃更改，需显式指定才保留，确保安全性
+- 📊 **状态持久化**：预览会话状态在进程重启后仍然有效
+- 🔍 **操作追踪**：记录预览期间所有操作历史，支持完整审计
+- ⚡ **自动备份恢复**：基于现有备份系统的可靠恢复机制
+- 🏷️ **视觉标识**：预览模式下所有操作显示 [PREVIEW] 标识
+- 🗑️ **移除旧功能**：删除过时的 --dry-run 参数和相关逻辑
+
+**v2.0.1 (2025-08-29)**
+- 🔧 补充缺失的批量操作映射表章节
+- ✅ 修正预览模式参数格式说明，与wrapper脚本实际实现保持一致
+- 📝 更新帮助信息，准确反映预览功能使用方式
+- 🎯 完成文档与代码100%一致性验证
+- 📋 新增专门的预览模式使用章节，统一术语和说明
+
+**v2.0.0 (2025-08-29)**
+- 📋 文档结构重新设计，主README专注wrapper接口
+- 🔧 详细实现文档独立为README_nb_runner.md
+- 🎯 突出Agent系统集成和文件传递机制
+- ✅ 精简主文档，提高可读性和易用性
+
 **v2.0.0 (2025-08-26)**
 - 📋 文档完全重构，按功能分类组织  
-- 🔍 完善查询分析功能说明(--status子命令详解)
+- 🔍 完善查询分析功能说明
 - 📦 新增完整批量操作说明
 - 🎯 增加实用场景和工作流程
 - ✅ 修正所有命令格式，确保与实际实现一致
-- 🚀 优化帮助文本结构，突出核心功能
-
-**v2.0.0 (2025-08-20)**
-- 模块化重构，完整Notebook操作平台
-- 新增结构分析、内容搜索、编辑操作
-- 新增批量操作、备份管理、预览模式
-- 优化Agent体验：移除调试警告，增强AST解析
-- 100%向后兼容
-
-**v1.x.x**
-- 基础执行、依赖检测功能
-- 双模式执行策略

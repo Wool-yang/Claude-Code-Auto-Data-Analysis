@@ -42,25 +42,19 @@ color: cyan
   - outcomes：预期成果列表
 - **data_sources**：数据源映射
   - 结构化数据：
-    * fields.core：核心字段列表（必须使用的字段）
-    * fields.support：支撑字段列表（辅助分析的字段）
+    * type: "structured"
+    * file: 描述文件名（如"Google_CC_Auto_Data_cleaned.json"）
   - 非结构化数据：
-    * 从摘要文件（DataSourceFileAnalysisAgent的最终产物）提取关键信息填充到extracted_info，格式为：
-      ```json
-      {
-        "核心指标": ["指标1", "指标2", ...],
-        "关键发现": ["发现1", "发现2", ...],
-        "重要数据": [{"名称": "数据1", "值": "xxx"}, ...],
-        "业务规则": ["规则1", "规则2", ...],
-        "业务洞察": ["洞察1", "洞察2", ...]
-      }
-      ```
-    * content_areas：摘要文件的内容区域列表，如["文档概述", "关键数据与指标", "重要发现与结论", "业务洞察"]
-    * summary_file_path：摘要文件的相对路径，如"archives/{current_task_name}/data_source/descriptions/{filename}_summary.md"
-- **field_details**：字段详细信息（必须包含，因为AnalysisExecutionAgent不再读描述文件）
-  - 每个重要字段都要有type、role、category、derivation说明
-  - type：数据类型（如categorical、numeric、datetime、text等）
-  - 这是执行Agent理解字段含义和类型的唯一来源
+    * type: "unstructured"
+    * file: 摘要文件名（如"2025年独立站7月PD营销活动方案_summary.md"）
+    * analysis_purpose: 从摘要提炼的分析用途列表
+    * key_points: 关键数据点列表
+- **field_derivations**：衍生字段信息（只记录可衍生新字段的源字段）
+  - field_name作为键，每个源字段包含：
+    * role：现有字段的职责描述
+    * category：现有字段的职责类别（dimension/measure/identifier/metadata）
+    * derivation：可从该字段衍生计算的字段列表
+  - 注意：字段的type信息从AnalysisExecutionAgent读取描述文件获取，不在此处重复
 - methodology：阐明方法论和总体路径
 - deliverables：约定 notebook 文件名与期望输出
 
@@ -152,14 +146,6 @@ color: cyan
 
 5. **规划文件生成与优化**：
    - 生成符合Schema的JSON文件
-   - **计算字段利用统计**（结构化数据）：
-     * total_fields: 从数据源描述文件的columns数组长度获取
-     * used_fields: 统计specific_fields中不重复的field_name数量
-     * core_fields: 统计importance_level="core"的字段数
-     * supporting_fields: 统计importance_level="supporting"的字段数
-     * exploratory_fields: 统计importance_level="exploratory"的字段数
-     * unused_fields: total_fields - used_fields
-     * unused_reasons: 为每个未使用字段记录原因（如"全为空值"、"与分析目标无关"、"数据质量问题"等）
    - 执行内部质量评估（完整性、可执行性、创新性）
    - 优化调整直到达到质量标准
    - 写入 archives/{current_task_name}/docs/analysis_plans/{plan_slug}.json
@@ -170,32 +156,30 @@ color: cyan
    - 标记待验证状态，等待 IdeaValidationAgent
 
 质量与一致性
-- 严格遵循 CLAUDE.md 中 **分析规划文件** Schema，确保包含 execution_steps、data_sources、targets 等核心字段
+- 严格遵循 CLAUDE.md 中 **分析规划文件** Schema，确保包含 execution_steps、data_sources、field_derivations、targets 等核心字段
 - 文件命名使用 {plan_slug}.json，与 deliverables.notebook 保持一致性
 - plan_slug 生成遵循命名规则：基于title，转换为合法标识符
 - **数据利用充分性检查**：
   - **结构化数据必须做到**：
-    * 所有字段都被评估和分类（即使最终不使用）
-    * 每个有效字段都有明确的analysis_role和usage_description
-    * 字段利用决策有理有据（使用理由充分，不使用理由明确）
+    * 所有字段都被评估和分析（即使最终不使用）
+    * 明确execution_steps.operations中fields列表使用的字段，尽可能覆盖到一切价值字段
     * 积极探索字段的潜在价值，鼓励发现意外洞察
-  - 非结构化数据的key_content_areas必须具体描述内容区域和使用目的，如：
-    * "第3章业务流程描述-用于理解业务逻辑"
-    * "附表A历史数据统计-作为对比基准"
-    * "图2.1组织架构图-用于理解层级关系"
-  - 每个data_operations必须具体到字段级别或明确的内容引用，不允许模糊描述
-  - **数据利用情况说明**：在规划中清晰说明字段利用情况（如：总字段数、核心使用字段、辅助字段、探索性字段、未使用字段及原因）
+  - 非结构化数据的analysis_purpose和key_points必须精准提炼，如：
+    * analysis_purpose: ["Prime Day目标对比", "策略验证"]
+    * key_points: ["7月份总目标: $10,364,173.75", "正式期: 7月8-11日"]
+  - 每个operations必须具体到字段级别或明确的内容引用，不允许模糊描述
+  - **数据利用情况说明**：在规划中清晰说明字段利用情况（通过operations.fields体现）
 - 不包含实现级代码，仅限分析思路但要足够详细
 
 规划质量评估标准
 - **完整性评分（0-100）**：
   - 目标覆盖度（30分）：所有related_objectives都有对应的分析步骤
   - 指标计算完整性（30分）：所有related_key_indicators都有具体计算方法
-  - 数据利用率（20分）：有效利用数据源中的关键字段和内容
+  - 数据利用率（20分）：通过operations.fields评估字段利用情况
   - 步骤逻辑性（20分）：分析步骤之间有清晰的逻辑关系和数据流向
 - **可执行性评分（0-100）**：
   - 操作具体性（40分）：每个data_operations都有明确的操作细节
-  - 字段明确性（30分）：target_fields准确对应数据源中的实际字段
+  - 字段明确性（30分）：operations.fields准确对应数据源中的实际字段
   - 预期结果清晰度（30分）：expected_result可以量化或明确验证
 - **创新性评分（0-100）**：
   - 分析方法创新（50分）：methodology体现先进的分析方法

@@ -11,6 +11,7 @@ import base64
 import hashlib
 import shutil
 import time
+import re
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from datetime import datetime
@@ -20,6 +21,8 @@ from utils.helpers import get_cell_id
 
 # 抑制调试警告
 os.environ['PYDEVD_DISABLE_FILE_VALIDATION'] = '1'
+
+
 
 
 class ImageManager:
@@ -101,7 +104,16 @@ class ImageManager:
         return images
     
     def save_cell_images(self, cell: nbformat.NotebookNode, cell_index: int) -> Dict[str, Any]:
-        """保存cell的图片到持久化存储"""
+        """
+        保存cell的图片到持久化存储（强制同步模式）
+        
+        Args:
+            cell: notebook cell对象
+            cell_index: cell索引
+        
+        Returns:
+            操作结果字典
+        """
         try:
             cell_id = get_cell_id(cell)
             content_hash = self._calculate_cell_hash(cell)
@@ -113,8 +125,8 @@ class ImageManager:
             # 提取图片数据
             images = self.extract_cell_images(cell, cell_index)
             
+            # 如果没有图片输出，清理可能存在的旧目录
             if not images:
-                # 清理可能存在的旧目录
                 if cell_dir.exists():
                     shutil.rmtree(cell_dir)
                     return {
@@ -131,107 +143,8 @@ class ImageManager:
                         'message': 'cell无图片输出'
                     }
             
-            # 检查是否需要更新
-            cell_info_file = cell_dir / 'cell_info.json'
-            need_update = True
-            
-            if cell_info_file.exists():
-                try:
-                    with open(cell_info_file, 'r', encoding='utf-8') as f:
-                        old_info = json.load(f)
-                    
-                    # 比较content hash和图片数量
-                    if (old_info.get('content_hash') == content_hash and 
-                        len(old_info.get('images', [])) == len(images)):
-                        
-                        # 比较图片hash
-                        old_hashes = set(img.get('data_hash') for img in old_info.get('images', []))
-                        new_hashes = set(img['data_hash'] for img in images)
-                        
-                        if old_hashes == new_hashes:
-                            need_update = False
-                
-                except (json.JSONDecodeError, IOError):
-                    need_update = True
-            
-            if not need_update:
-                return {
-                    'action': 'unchanged',
-                    'cell_index': cell_index,
-                    'cell_id': cell_id,
-                    'message': '图片无变化，跳过更新'
-                }
-            
-            # 创建目录并保存图片
-            cell_dir.mkdir(parents=True, exist_ok=True)
-            
-            saved_images = []
-            
-            for img_info in images:
-                output_idx = img_info['output_index']
-                format_name = img_info['format']
-                image_data = img_info['data']
-                
-                # 确定文件扩展名
-                ext_map = {
-                    'PNG': '.png',
-                    'JPEG': '.jpg',
-                    'JPG': '.jpg', 
-                    'GIF': '.gif',
-                    'SVG': '.svg'
-                }
-                ext = ext_map.get(format_name, '.png')
-                
-                # 文件名
-                filename = f"output_{output_idx}_{img_info['data_hash']}{ext}"
-                file_path = cell_dir / filename
-                
-                # 保存图片数据
-                if format_name in ['PNG', 'JPEG', 'JPG', 'GIF']:
-                    try:
-                        image_bytes = base64.b64decode(image_data)
-                        with open(file_path, 'wb') as f:
-                            f.write(image_bytes)
-                    except Exception as e:
-                        print(f"⚠️ 保存二进制图片失败: {e}")
-                        with open(file_path, 'w', encoding='utf-8') as f:
-                            f.write(str(image_data))
-                else:
-                    # SVG格式
-                    with open(file_path, 'w', encoding='utf-8') as f:
-                        f.write(str(image_data))
-                
-                saved_images.append({
-                    'filename': filename,
-                    'format': format_name,
-                    'mime_type': img_info['mime_type'],
-                    'size_bytes': img_info['size_bytes'],
-                    'data_hash': img_info['data_hash'],
-                    'file_path': str(file_path)
-                })
-            
-            # 保存cell信息
-            cell_info = {
-                'cell_index': cell_index,
-                'cell_id': cell_id,
-                'content_hash': content_hash,
-                'saved_at': datetime.now().isoformat(),
-                'notebook_path': str(self.notebook_path),
-                'images': saved_images
-            }
-            
-            with open(cell_info_file, 'w', encoding='utf-8') as f:
-                json.dump(cell_info, f, indent=2, ensure_ascii=False)
-            
-            return {
-                'action': 'saved',
-                'cell_index': cell_index,
-                'cell_id': cell_id,
-                'images_count': len(saved_images),
-                'cell_dir': str(cell_dir),
-                'cell_info': cell_info,  # 添加 cell_info 到返回结果
-                'message': f'保存了 {len(saved_images)} 个图片'
-            }
+            # 强制同步：直接保存图片到磁盘
+            return self._save_images_to_disk(cell, cell_index, cell_id, content_hash, cell_dir, images)
             
         except Exception as e:
             return {
@@ -242,8 +155,100 @@ class ImageManager:
                 'message': f'保存图片失败: {e}'
             }
     
+    def _save_images_with_warning(self, cell, cell_index, cell_id, content_hash, cell_dir, images, warning_msg):
+        """
+        带警告信息的图片保存
+        """
+        result = self._save_images_to_disk(cell, cell_index, cell_id, content_hash, cell_dir, images)
+        if result['action'] == 'saved':
+            result['message'] += f" (警告: {warning_msg})"
+            result['action'] = 'saved_with_warning'
+        return result
+    
+    def _save_images_to_disk(self, cell, cell_index, cell_id, content_hash, cell_dir, images):
+        """
+        实际执行图片保存到磁盘的逻辑
+        """
+        # 创建目录并保存图片
+        cell_dir.mkdir(parents=True, exist_ok=True)
+        
+        saved_images = []
+        
+        for img_info in images:
+            output_idx = img_info['output_index']
+            format_name = img_info['format']
+            image_data = img_info['data']
+            
+            # 确定文件扩展名
+            ext_map = {
+                'PNG': '.png',
+                'JPEG': '.jpg',
+                'JPG': '.jpg', 
+                'GIF': '.gif',
+                'SVG': '.svg'
+            }
+            ext = ext_map.get(format_name, '.png')
+            
+            # 文件名
+            filename = f"output_{output_idx}_{img_info['data_hash']}{ext}"
+            file_path = cell_dir / filename
+            
+            # 保存图片数据
+            if format_name in ['PNG', 'JPEG', 'JPG', 'GIF']:
+                try:
+                    image_bytes = base64.b64decode(image_data)
+                    with open(file_path, 'wb') as f:
+                        f.write(image_bytes)
+                except Exception as e:
+                    print(f"⚠️ 保存二进制图片失败: {e}")
+                    with open(file_path, 'w', encoding='utf-8') as f:
+                        f.write(str(image_data))
+            else:
+                # SVG格式
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(str(image_data))
+            
+            saved_images.append({
+                'filename': filename,
+                'format': format_name,
+                'mime_type': img_info['mime_type'],
+                'size_bytes': img_info['size_bytes'],
+                'data_hash': img_info['data_hash'],
+                'file_path': str(file_path)
+            })
+        
+        # 保存cell信息
+        cell_info = {
+            'cell_index': cell_index,
+            'cell_id': cell_id,
+            'content_hash': content_hash,
+            'saved_at': datetime.now().isoformat(),
+            'notebook_path': str(self.notebook_path),
+            'images': saved_images
+        }
+        
+        cell_info_file = cell_dir / 'cell_info.json'
+        with open(cell_info_file, 'w', encoding='utf-8') as f:
+            json.dump(cell_info, f, indent=2, ensure_ascii=False)
+        
+        return {
+            'action': 'saved',
+            'cell_index': cell_index,
+            'cell_id': cell_id,
+            'images_count': len(saved_images),
+            'cell_dir': str(cell_dir),
+            'cell_info': cell_info,  # 添加 cell_info 到返回结果
+            'message': f'保存了 {len(saved_images)} 个图片'
+        }
+    
     def sync_all_images(self, notebook: Optional[nbformat.NotebookNode] = None, silent: bool = False) -> Dict[str, Any]:
-        """同步所有cell的图片状态"""
+        """
+        强制同步所有cell的图片状态（简化版）
+        
+        Args:
+            notebook: notebook对象，为None时自动加载
+            silent: 是否静默模式
+        """
         try:
             if notebook is None:
                 notebook = self._load_notebook()
@@ -255,37 +260,20 @@ class ImageManager:
                 'total_cells': len(notebook.cells),
                 'processed_cells': 0,
                 'images_saved': 0,
-                'images_unchanged': 0,  # 已存在且未变化的图片
                 'images_cleaned': 0,
                 'directories_removed': 0,
                 'errors': 0,
                 'actions': []
             }
             
-            # 处理每个cell
+            # 强制同步每个cell
             for i, cell in enumerate(notebook.cells):
                 result = self.save_cell_images(cell, i)
                 stats['actions'].append(result)
                 stats['processed_cells'] += 1
                 
                 if result['action'] == 'saved':
-                    # 统计保存的图片数量
                     stats['images_saved'] += result.get('images_count', 0)
-                elif result['action'] == 'unchanged':
-                    # 统计未变化的图片数量（需要读取现有的 cell_info.json）
-                    try:
-                        cell_dir_name = f"cell_{i}_{result.get('cell_id', '')}" if result.get('cell_id') else f"cell_{i}"
-                        cell_dir = self.images_dir / cell_dir_name
-                        cell_info_file = cell_dir / 'cell_info.json'
-                        
-                        if cell_info_file.exists():
-                            with open(cell_info_file, 'r', encoding='utf-8') as f:
-                                cell_info = json.load(f)
-                            
-                            images_count = len(cell_info.get('images', []))
-                            stats['images_unchanged'] += images_count
-                    except (json.JSONDecodeError, IOError, FileNotFoundError):
-                        pass
                 elif result['action'] == 'cleaned':
                     stats['images_cleaned'] += 1
                 elif result['action'] == 'error':
@@ -949,7 +937,7 @@ def get_image_manager(notebook_path: str) -> ImageManager:
 
 
 def save_notebook_images(notebook_path: str) -> None:
-    """保存notebook所有cell的图片"""
+    """保存notebook所有cell的图片（强制同步模式）"""
     manager = get_image_manager(notebook_path)
     stats = manager.sync_all_images()
     
@@ -960,21 +948,20 @@ def save_notebook_images(notebook_path: str) -> None:
     print(f"📊 图片同步完成:")
     print(f"   处理cell数: {stats['processed_cells']}/{stats['total_cells']}")
     
-    # 图片统计
-    total_images = stats['images_saved'] + stats['images_unchanged']
-    if total_images > 0:
-        print(f"   📷 图片文件: {total_images} 个 (新保存: {stats['images_saved']}, 已存在: {stats['images_unchanged']})")
+    # 简化统计显示
+    if stats['images_saved'] > 0:
+        print(f"   📷 保存图片: {stats['images_saved']} 个")
     
-    # 清理统计
     if stats['images_cleaned'] > 0:
         print(f"   🧹 清理目录: {stats['images_cleaned']} 个")
+    
     if stats['directories_removed'] > 0:
         print(f"   🗑️ 删除孤立目录: {stats['directories_removed']} 个")
     
     if stats['errors'] > 0:
         print(f"   ❌ 错误: {stats['errors']} 个")
     
-    if total_images == 0:
+    if stats['images_saved'] == 0 and stats['images_cleaned'] == 0:
         print(f"   ℹ️ 没有发现图片输出内容")
 
 

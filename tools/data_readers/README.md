@@ -1,54 +1,5 @@
 # 数据读取工具说明文档
 
-## DataSourceFileAnalysisAgent 处理流程
-
-DataSourceFileAnalysisAgent 通过 Bash 工具调用脚本，处理流程如下：
-
-### 1. 文件分类
-```bash
-python tools/data_readers/file_classifier.py archives/{current_task_name}/data_source/raw/data.xlsx
-# 输出 JSON 到 stdout，Agent 解析结果判断文件类型
-```
-
-### 2. 结构化数据处理
-```bash
-# 生成中间产物分析文件
-python tools/data_readers/read_structured_data.py \
-  --files archives/{current_task_name}/data_source/raw/data.csv \
-  --intermediate \
-  --sample_rows 20
-# 输出 JSON 到 stdout，不生成中间文件
-```
-
-### 3. 非结构化数据处理
-```bash
-# 步骤1：生成中间产物
-python tools/data_readers/document_parser.py \
-  archives/{current_task_name}/data_source/raw/document.docx
-# 生成 intermediate_artifacts/{filename}_intermediate.md 和图片目录
-
-# 步骤2：检查文件大小，如需要则分割
-# Agent 使用 ls -lh 或 dir 命令检查文件大小
-# 如果 > 20KB，调用分割工具：
-python tools/data_readers/file_splitter.py \
-  archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/document_intermediate.md \
-  -o archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/ \
-  -s 20 --delete-original
-
-# 步骤3：添加完整的 frontmatter
-python tools/data_readers/frontmatter_tool.py single \
-  archives/{current_task_name}/data_source/descriptions/intermediate_artifacts/document_intermediate.md \
-  --frontmatter '{"source_id": "1", "file_name": "document.docx", ...}' \
-  -o archives/{current_task_name}/data_source/descriptions/document.md \
-  --merge update
-```
-
-### 4. Agent 处理逻辑
-- Agent 使用 Bash 工具调用上述脚本
-- 解析脚本的 stdout 输出（JSON 格式）
-- 根据输出决定下一步操作
-- 最终生成符合 CLAUDE.md schema 的描述文件
-
 ## 工具概述
 
 本目录包含五个核心脚本：
@@ -183,8 +134,8 @@ python read_structured_data.py --files data.csv --sample_rows 10
     "columns_analysis": [
       {
         "name": "用户ID",
-        "type": "integer", 
-        "sample_values": [1, 2, 3, 4, 5]
+        "type": "integer",
+        "sample_values": [1001, 1002, 1003]
       }
     ],
     "raw_columns": ["用户ID", "姓名", "年龄"],
@@ -196,10 +147,12 @@ python read_structured_data.py --files data.csv --sample_rows 10
     "has_header": true,
     "decoded_header_sample": "用户ID,姓名,年龄,注册时间,状态"
   },
+  "extraction_method": "read_structured_data",
   "sample_data": {
     "sample_rows": [...],
     "sample_count": 20,
-    "sampling_method": "uniform"  # "head" 或 "uniform"
+    "sampling_method": "uniform"
+  }
   }
 }
 ```
@@ -295,13 +248,29 @@ archives/{task_name}/data_source/descriptions/intermediate_artifacts/
 
 ### 输出示例
 
-#### Markdown中间产物
+### 中间产物Markdown文件（包含frontmatter）
+
+**文件位置**：`archives/{task_name}/data_source/descriptions/intermediate_artifacts/document_intermediate.md`
+
 ```markdown  
+---
+file_name: document.xlsx
+file_type: xlsx
+size: 3121353
+modified_time: '2025-07-24T20:36:51'
+is_structured: false
+extraction_method: "document_parser"
+intermediate_artifacts:
+  intermediate_file_path: "intermediate_artifacts/document_intermediate.md"
+  images_count: 13
+  images_directory: "intermediate_artifacts/document_images"
+---
+
 # document.xlsx
 
 **File Type:** xlsx
 **File Size:** 3121353 bytes  
-**Modified:** 2025-07-24T20:36:51.177986
+**Modified:** 2025-07-24T20:36:51
 **Images Extracted:** 13
 **Structured Data:** No
 
@@ -395,17 +364,21 @@ if file_size_kb > 20:
 #### frontmatter示例
 ```yaml
 ---
-source_id: "2"
 file_name: "project_background.docx"
 file_type: "docx"
 is_structured: false
 size: 45231
-description: "项目背景文档，包含需求分析和业务流程描述"
-# ... 其他原始字段 ...
+modified_time: '2025-07-24T20:36:51'
+extraction_method: "document_parser"
+intermediate_artifacts:
+  intermediate_file_path: "intermediate_artifacts/project_background_intermediate.md"
+  images_count: 5
+  images_directory: "intermediate_artifacts/project_background_images"
+# 分片特有字段：
 is_split: true
 part_number: 1
 total_parts: 3
-parent_file: "project_background.md"
+parent_file: "project_background_intermediate.md"
 ---
 ```
 
@@ -458,11 +431,10 @@ python frontmatter_tool.py single document.md \
   --frontmatter '{"source_id": "1"}' \
   --merge replace
 ```
-```
 
 ### 输出格式
 
-#### 成功处理的文件
+#### 摘要文件frontmatter示例
 ```yaml
 ---
 source_id: "1"
@@ -471,23 +443,32 @@ file_type: "docx"
 is_structured: false
 size: 45231
 description: "项目文档"
-structure:
-  row_count: 0
-  column_count: 0
-  columns: []
-metadata:
-  encoding: "utf-8"
-  delimiter: null
-  has_header: false
-intermediate_artifacts:
-  has_intermediate_file: true
-  intermediate_file_path: "intermediate_artifacts/doc_intermediate.md"
 tags: ["文档", "项目"]
-# 分片文件额外字段（如适用）
-is_split: true
-part_number: 1
+is_summary: true
 total_parts: 3
-parent_file: "document.md"
+intermediate_files:
+  - "intermediate_artifacts/document_intermediate_1.md"
+  - "intermediate_artifacts/document_intermediate_2.md"
+  - "intermediate_artifacts/document_intermediate_3.md"
+content_areas:
+  - "文档概述"
+  - "关键数据与指标"
+  - "重要发现与结论"
+  - "业务洞察"
+extracted_info:
+  核心指标:
+    - "指标1"
+    - "指标2"
+  关键发现:
+    - "发现1"
+    - "发现2"
+  重要数据:
+    - {"name": "data1", "value": "value1"}
+    - {"name": "data2", "value": "value2"}
+  业务规则:
+    - "规刱1"
+  业务洞察:
+    - "洞察1"
 ---
 
 # 原始文档内容

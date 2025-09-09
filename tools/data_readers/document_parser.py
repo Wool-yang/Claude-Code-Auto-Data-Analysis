@@ -1392,25 +1392,8 @@ def build_description(path):
             intermediate_md += "\n\n## 文档中的图片\n\n"
             for img in extracted_images:
                 img_relative_path = f"{base_name}_images/{img['filename']}"
-                # 分析图片内容并生成描述
-                img_description = analyze_image_content(img['filename'], img['path'])
-                
-                # 修复：统一处理AI描述和回退格式
-                if img_description.startswith('![') and img_description.endswith(']'):
-                    # 这是回退的标准markdown格式，需要添加路径
-                    pure_filename = img_description[2:-1]  # 提取![filename]中的filename
-                    intermediate_md += f"![{pure_filename}]({img_relative_path})\n\n"
-                elif img_description == img['filename']:
-                    # 这是旧版本的回退格式（纯文件名），转换为标准markdown格式
-                    intermediate_md += f"![{img['filename']}]({img_relative_path})\n\n"
-                else:
-                    # 这是AI生成的描述，使用纯文本格式
-                    pure_desc = img_description.replace('\n', ' ').replace('\r', ' ').strip()
-                    pure_desc = ' '.join(pure_desc.split())
-                    if pure_desc:
-                        intermediate_md += f"![{img['filename']}]({img_relative_path}) [{pure_desc}]\n\n"
-                    else:
-                        intermediate_md += f"![{img['filename']}]({img_relative_path})\n\n"
+                # 使用标准markdown格式，AI处理将在通用阶段进行
+                intermediate_md += f"![{img['filename']}]({img_relative_path})\n\n"
             
     elif ext in ["doc"]:
         body = parse_doc(path)

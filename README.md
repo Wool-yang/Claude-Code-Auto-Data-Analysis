@@ -60,7 +60,7 @@ graph LR
 1. **克隆项目**
 ```bash
 git clone <repository-url>
-cd "D:\Desktop\data\数据复盘\Claude Code Auto Analysis"
+cd "Claude Code 当前运行目录"
 ```
 
 2. **安装 Python 依赖**
@@ -325,7 +325,6 @@ AnalysisIdeaPlanningAgent 采用智能字段利用机制：
 - **完整性扫描**：确保每个字段都被分析和分类
 - **价值分层**：核心字段、支撑字段、探索字段分类
 - **多角度分析**：描述性分析、对比分析、关联分析、深度挖掘
-- **利用率统计**：提供 field_stats 统计字段利用情况
 
 ### 文件自动分割与摘要生成
 
